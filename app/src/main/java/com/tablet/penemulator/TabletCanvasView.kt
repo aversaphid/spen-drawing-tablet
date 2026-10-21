@@ -3,9 +3,12 @@ package com.tablet.penemulator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.RectF
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
@@ -26,10 +29,28 @@ class TabletCanvasView @JvmOverloads constructor(
         ULTRAWIDE_21_9(21f, 9f, "21:9 Ultrawide")
     }
 
+    enum class MonitorMapping(val title: String, val minXRatio: Float, val maxXRatio: Float) {
+        ALL_MONITORS("Full Desktop", 0.0f, 1.0f),
+        MONITOR_1("Monitor 1", 0.0f, 0.5f),
+        MONITOR_2("Monitor 2", 0.5f, 1.0f)
+    }
+
     var aspectRatioMode: AspectRatioMode = AspectRatioMode.MONITOR_16_9
         set(value) {
             field = value
             updateActiveArea()
+            invalidate()
+        }
+
+    var monitorMapping: MonitorMapping = MonitorMapping.ALL_MONITORS
+        set(value) {
+            field = value
+            invalidate()
+        }
+
+    var isBlackoutMode: Boolean = false
+        set(value) {
+            field = value
             invalidate()
         }
 
@@ -65,6 +86,13 @@ class TabletCanvasView @JvmOverloads constructor(
         style = Paint.Style.STROKE
     }
 
+    private val stealthCornerPaint = Paint().apply {
+        color = Color.parseColor("#3038BDF8")
+        strokeWidth = 2.5f
+        style = Paint.Style.STROKE
+        isAntiAlias = true
+    }
+
     private val inactiveShadePaint = Paint().apply {
         color = Color.parseColor("#50000000")
         style = Paint.Style.FILL
@@ -96,6 +124,17 @@ class TabletCanvasView @JvmOverloads constructor(
         isAntiAlias = true
     }
 
+    // Vibrator for edge feedback
+    private val vibrator: Vibrator? by lazy {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+            vibratorManager?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        }
+    }
+
     // Telemetry state for visual rendering
     private var currentNormX = 0f
     private var currentNormY = 0f
@@ -107,6 +146,7 @@ class TabletCanvasView @JvmOverloads constructor(
     private var isInRange = false
     private var rawTouchX = 0f
     private var rawTouchY = 0f
+    private var wasInsideActiveArea = true
 
     init {
         // Essential to capture hover events from S-Pen
@@ -125,12 +165,10 @@ class TabletCanvasView @JvmOverloads constructor(
         val targetRatio = aspectRatioMode.ratioW / aspectRatioMode.ratioH
 
         if (viewRatio > targetRatio) {
-            // View is wider than target ratio: letterbox left and right
             val targetWidth = height * targetRatio
             val sideInset = (width - targetWidth) / 2f
             activeAreaRect.set(sideInset, 0f, width - sideInset, height.toFloat())
         } else {
-            // View is taller than target ratio: letterbox top and bottom
             val targetHeight = width / targetRatio
             val topInset = (height - targetHeight) / 2f
             activeAreaRect.set(0f, topInset, width.toFloat(), height - topInset)
@@ -158,10 +196,9 @@ class TabletCanvasView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        // Only process stylus events (palm rejection against finger touches)
+        // Reject finger touches when drawing with S-Pen (palm rejection)
         val toolType = event.getToolType(0)
         if (toolType != MotionEvent.TOOL_TYPE_STYLUS && toolType != MotionEvent.TOOL_TYPE_ERASER) {
-            // Finger touch: ignore or let parent handle
             return false
         }
 
@@ -183,6 +220,13 @@ class TabletCanvasView @JvmOverloads constructor(
     private fun processMotionEvent(event: MotionEvent, tipDown: Boolean, inRange: Boolean) {
         rawTouchX = event.x
         rawTouchY = event.y
+
+        val isInside = activeAreaRect.contains(rawTouchX, rawTouchY)
+        if (wasInsideActiveArea && !isInside && inRange) {
+            // S-Pen crossed outside active boundary: fire gentle edge haptic tick
+            triggerEdgeHaptic()
+        }
+        wasInsideActiveArea = isInside
 
         // Normalize within active area (0.0 to 1.0)
         val clampedX = rawTouchX.coerceIn(activeAreaRect.left, activeAreaRect.right)
@@ -211,10 +255,10 @@ class TabletCanvasView @JvmOverloads constructor(
         currentTiltX = tiltXDeg.coerceIn(-90, 90)
         currentTiltY = tiltYDeg.coerceIn(-90, 90)
 
-        // Scale to HID ranges:
-        // X, Y: 0..32767
-        // Pressure: 0..4095
-        val hidX = (currentNormX * 32767).roundToInt().coerceIn(0, 32767)
+        // Scale across active monitor mapping (e.g. Monitor 1 = left half, Monitor 2 = right half)
+        val mappedNormX = monitorMapping.minXRatio + currentNormX * (monitorMapping.maxXRatio - monitorMapping.minXRatio)
+
+        val hidX = (mappedNormX * 32767).roundToInt().coerceIn(0, 32767)
         val hidY = (currentNormY * 32767).roundToInt().coerceIn(0, 32767)
         val hidPressure = (currentPressure * 4095).roundToInt().coerceIn(0, 4095)
 
@@ -232,10 +276,42 @@ class TabletCanvasView @JvmOverloads constructor(
         invalidate()
     }
 
+    private fun triggerEdgeHaptic() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator?.vibrate(VibrationEffect.createOneShot(15, 80))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(15)
+            }
+        } catch (_: Exception) {}
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        // 1. Draw background
+        if (isBlackoutMode) {
+            // Pitch black background for zero screen glare and maximum battery saving
+            canvas.drawColor(Color.BLACK)
+
+            // Draw 4 subtle, faint corner crossbars marking the active drawing area
+            val cornerLen = 30f
+            // Top-left
+            canvas.drawLine(activeAreaRect.left, activeAreaRect.top, activeAreaRect.left + cornerLen, activeAreaRect.top, stealthCornerPaint)
+            canvas.drawLine(activeAreaRect.left, activeAreaRect.top, activeAreaRect.left, activeAreaRect.top + cornerLen, stealthCornerPaint)
+            // Top-right
+            canvas.drawLine(activeAreaRect.right, activeAreaRect.top, activeAreaRect.right - cornerLen, activeAreaRect.top, stealthCornerPaint)
+            canvas.drawLine(activeAreaRect.right, activeAreaRect.top, activeAreaRect.right, activeAreaRect.top + cornerLen, stealthCornerPaint)
+            // Bottom-left
+            canvas.drawLine(activeAreaRect.left, activeAreaRect.bottom, activeAreaRect.left + cornerLen, activeAreaRect.bottom, stealthCornerPaint)
+            canvas.drawLine(activeAreaRect.left, activeAreaRect.bottom, activeAreaRect.left, activeAreaRect.bottom - cornerLen, stealthCornerPaint)
+            // Bottom-right
+            canvas.drawLine(activeAreaRect.right, activeAreaRect.bottom, activeAreaRect.right - cornerLen, activeAreaRect.bottom, stealthCornerPaint)
+            canvas.drawLine(activeAreaRect.right, activeAreaRect.bottom, activeAreaRect.right, activeAreaRect.bottom - cornerLen, stealthCornerPaint)
+            return
+        }
+
+        // 1. Draw regular background
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
 
         // 2. Draw subtle grid inside active area
@@ -283,18 +359,19 @@ class TabletCanvasView @JvmOverloads constructor(
         canvas.drawText("STATE: ", hudX, hudY, hudTextPaint)
         canvas.drawText(statusText, hudX + 110f, hudY, hudHighlightPaint)
 
-        val posText = "POS: ${(currentNormX * 100).roundToInt()}%, ${(currentNormY * 100).roundToInt()}%"
-        canvas.drawText(posText, hudX + 320f, hudY, hudTextPaint)
+        val monLabel = "[${monitorMapping.title.uppercase()}] "
+        val posText = "${monLabel}POS: ${(currentNormX * 100).roundToInt()}%, ${(currentNormY * 100).roundToInt()}%"
+        canvas.drawText(posText, hudX + 330f, hudY, hudTextPaint)
 
         val pressText = "PRESSURE: ${(currentPressure * 100).roundToInt()}%"
-        canvas.drawText(pressText, hudX + 570f, hudY, hudTextPaint)
+        canvas.drawText(pressText, hudX + 660f, hudY, hudTextPaint)
 
         val tiltText = "TILT: ${currentTiltX}°, ${currentTiltY}°"
-        canvas.drawText(tiltText, hudX + 830f, hudY, hudTextPaint)
+        canvas.drawText(tiltText, hudX + 920f, hudY, hudTextPaint)
 
         if (isBarrelPressed) {
             hudHighlightPaint.color = Color.parseColor("#FBBF24")
-            canvas.drawText("[BUTTON PRESSED]", hudX + 1040f, hudY, hudHighlightPaint)
+            canvas.drawText("[BUTTON]", hudX + 1120f, hudY, hudHighlightPaint)
         }
     }
 }

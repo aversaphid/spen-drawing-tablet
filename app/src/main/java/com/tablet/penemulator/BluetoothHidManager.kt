@@ -126,6 +126,8 @@ class BluetoothHidManager(
         return true
     }
 
+    var isTurboMode = true
+
     @SuppressLint("MissingPermission")
     fun registerHidApp() {
         val proxy = hidDevice ?: return
@@ -139,27 +141,31 @@ class BluetoothHidManager(
             HidDescriptor.REPORT_DESCRIPTOR
         )
 
+        // Turbo mode requests 7.5ms (7500us) latency for ~133Hz polling vs 11.25ms (11250us)
+        val latencyUs = if (isTurboMode) 7500 else 11250
+        val tokenRate = if (isTurboMode) 1600 else 800
+
         val inQos = BluetoothHidDeviceAppQosSettings(
             BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT,
-            800,
-            9,
+            tokenRate,
+            18,
             0,
-            11250,
+            latencyUs,
             BluetoothHidDeviceAppQosSettings.MAX
         )
 
         val outQos = BluetoothHidDeviceAppQosSettings(
             BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT,
-            800,
-            9,
+            tokenRate,
+            18,
             0,
-            11250,
+            latencyUs,
             BluetoothHidDeviceAppQosSettings.MAX
         )
 
         try {
             proxy.registerApp(sdpSettings, inQos, outQos, executor, hidCallback)
-            Log.d(tag, "Requested HID App registration")
+            Log.d(tag, "Requested HID App registration (Turbo=$isTurboMode, latency=${latencyUs}us)")
         } catch (e: Exception) {
             Log.e(tag, "Failed to register HID app", e)
             listener.onError("Failed to register HID app: ${e.message}")

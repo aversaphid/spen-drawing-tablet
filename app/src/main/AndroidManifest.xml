@@ -10,6 +10,7 @@
 
     <!-- Wake lock to keep screen on while drawing -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <uses-feature android:name="android.hardware.bluetooth" android:required="true" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="true" />

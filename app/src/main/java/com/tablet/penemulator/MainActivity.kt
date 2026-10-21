@@ -39,7 +39,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Keep screen active while app is running
+        // Keep screen awake while tablet app is running
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -50,29 +50,60 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupUI() {
-        // Aspect ratio selection
+        // 1. Aspect Ratio Selection
         binding.toggleAspectRatio.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (isChecked) {
                 when (checkedId) {
                     R.id.btnRatio16_9 -> binding.canvasView.aspectRatioMode = TabletCanvasView.AspectRatioMode.MONITOR_16_9
                     R.id.btnRatio16_10 -> binding.canvasView.aspectRatioMode = TabletCanvasView.AspectRatioMode.TABLET_16_10
-                    R.id.btnRatio21_9 -> binding.canvasView.aspectRatioMode = TabletCanvasView.AspectRatioMode.ULTRAWIDE_21_9
                 }
             }
         }
 
-        // Hide / Show UI for distraction-free drawing
-        binding.btnImmersive.setOnClickListener {
-            binding.cardTopBar.visibility = View.GONE
-            binding.fabShowUI.visibility = View.VISIBLE
+        // 2. Monitor Selection (Display Toggle)
+        binding.toggleMonitor.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (isChecked) {
+                when (checkedId) {
+                    R.id.btnMonAll -> {
+                        binding.canvasView.monitorMapping = TabletCanvasView.MonitorMapping.ALL_MONITORS
+                        Toast.makeText(this, "Mapped to Entire Virtual Desktop", Toast.LENGTH_SHORT).show()
+                    }
+                    R.id.btnMon1 -> {
+                        binding.canvasView.monitorMapping = TabletCanvasView.MonitorMapping.MONITOR_1
+                        Toast.makeText(this, "Mapped to Monitor 1 (Left Half)", Toast.LENGTH_SHORT).show()
+                    }
+                    R.id.btnMon2 -> {
+                        binding.canvasView.monitorMapping = TabletCanvasView.MonitorMapping.MONITOR_2
+                        Toast.makeText(this, "Mapped to Monitor 2 (Right Half)", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
         }
 
-        binding.fabShowUI.setOnClickListener {
-            binding.cardTopBar.visibility = View.VISIBLE
-            binding.fabShowUI.visibility = View.GONE
+        // 3. Turbo Bluetooth Polling Toggle
+        binding.btnTurbo.setOnClickListener {
+            bluetoothManager.isTurboMode = !bluetoothManager.isTurboMode
+            if (bluetoothManager.isTurboMode) {
+                binding.btnTurbo.text = "Turbo ⚡ [ON]"
+                binding.btnTurbo.setTextColor(Color.parseColor("#38BDF8"))
+                Toast.makeText(this, "Turbo Polling ON (High-Rate ~133Hz, 7.5ms interval)", Toast.LENGTH_SHORT).show()
+            } else {
+                binding.btnTurbo.text = "Turbo ⚡ [OFF]"
+                binding.btnTurbo.setTextColor(Color.parseColor("#9CA3AF"))
+                Toast.makeText(this, "Standard Polling (Balanced battery)", Toast.LENGTH_SHORT).show()
+            }
         }
 
-        // Connect button
+        // 4. Blackout Battery Saver Mode
+        binding.btnBlackout.setOnClickListener {
+            enableBlackoutMode()
+        }
+
+        binding.btnWakeUI.setOnClickListener {
+            disableBlackoutMode()
+        }
+
+        // 5. Connect / Disconnect Button
         binding.btnConnect.setOnClickListener {
             if (bluetoothManager.connectedDevice != null) {
                 bluetoothManager.disconnect()
@@ -87,7 +118,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Wire canvas events to Bluetooth HID
+        // 6. Wire canvas pen events to Bluetooth HID
         binding.canvasView.onPenEventListener = { tipDown, barrelButton, inRange, x, y, pressure, tiltX, tiltY ->
             bluetoothManager.sendPenReport(
                 tipDown = tipDown,
@@ -100,6 +131,30 @@ class MainActivity : AppCompatActivity() {
                 tiltY = tiltY
             )
         }
+    }
+
+    private fun enableBlackoutMode() {
+        binding.cardTopBar.visibility = View.GONE
+        binding.btnWakeUI.visibility = View.VISIBLE
+        binding.canvasView.isBlackoutMode = true
+
+        // Dim screen to minimum brightness to conserve battery
+        val lp = window.attributes
+        lp.screenBrightness = 0.01f
+        window.attributes = lp
+
+        Toast.makeText(this, "Blackout Mode Active (Tap top-right to wake)", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun disableBlackoutMode() {
+        binding.cardTopBar.visibility = View.VISIBLE
+        binding.btnWakeUI.visibility = View.GONE
+        binding.canvasView.isBlackoutMode = false
+
+        // Restore normal brightness
+        val lp = window.attributes
+        lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        window.attributes = lp
     }
 
     private fun checkPermissionsAndInit() {
