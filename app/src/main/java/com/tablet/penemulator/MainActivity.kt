@@ -65,27 +65,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 2. Monitor Selection (Display Toggle)
-        binding.toggleMonitor.addOnButtonCheckedListener { _, checkedId, isChecked ->
-            if (isChecked) {
-                when (checkedId) {
-                    R.id.btnMon1 -> {
-                        binding.canvasView.monitorMapping = TabletCanvasView.MonitorMapping.MONITOR_1
-                        Toast.makeText(this, "Mapped to Monitor 1 (Full Screen: 100%)", Toast.LENGTH_SHORT).show()
-                    }
-                    R.id.btnSplitLeft -> {
-                        binding.canvasView.monitorMapping = TabletCanvasView.MonitorMapping.LEFT_HALF
-                        Toast.makeText(this, "Mapped to Left Half (50%)", Toast.LENGTH_SHORT).show()
-                    }
-                    R.id.btnSplitRight -> {
-                        binding.canvasView.monitorMapping = TabletCanvasView.MonitorMapping.RIGHT_HALF
-                        Toast.makeText(this, "Mapped to Right Half (50%)", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-        }
-
-        // 3. Turbo Bluetooth Polling Toggle
+        // 2. Turbo Bluetooth Polling Toggle
         binding.btnTurbo.setOnClickListener {
             bluetoothManager.isTurboMode = !bluetoothManager.isTurboMode
             if (bluetoothManager.isTurboMode) {

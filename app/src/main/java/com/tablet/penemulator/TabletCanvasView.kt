@@ -29,23 +29,10 @@ class TabletCanvasView @JvmOverloads constructor(
         ULTRAWIDE_21_9(21f, 9f, "21:9 Ultrawide")
     }
 
-    enum class MonitorMapping(val title: String, val minXRatio: Float, val maxXRatio: Float) {
-        MONITOR_1("Monitor 1 (Full)", 0.0f, 1.0f),
-        LEFT_HALF("Left Half", 0.0f, 0.5f),
-        RIGHT_HALF("Right Half", 0.5f, 1.0f),
-        ALL_MONITORS("Spanned Desktop", 0.0f, 1.0f)
-    }
-
     var aspectRatioMode: AspectRatioMode = AspectRatioMode.MONITOR_16_9
         set(value) {
             field = value
             updateActiveArea()
-            invalidate()
-        }
-
-    var monitorMapping: MonitorMapping = MonitorMapping.MONITOR_1
-        set(value) {
-            field = value
             invalidate()
         }
 
@@ -266,10 +253,8 @@ class TabletCanvasView @JvmOverloads constructor(
         currentTiltX = tiltXDeg.coerceIn(-90, 90)
         currentTiltY = tiltYDeg.coerceIn(-90, 90)
 
-        // Scale across active monitor mapping (e.g. Monitor 1 = left half, Monitor 2 = right half)
-        val mappedNormX = monitorMapping.minXRatio + currentNormX * (monitorMapping.maxXRatio - monitorMapping.minXRatio)
-
-        val hidX = (mappedNormX * 32767).roundToInt().coerceIn(0, 32767)
+        // 1:1 direct mapping to the main monitor (0..32767)
+        val hidX = (currentNormX * 32767).roundToInt().coerceIn(0, 32767)
         val hidY = (currentNormY * 32767).roundToInt().coerceIn(0, 32767)
         val hidPressure = (currentPressure * 4095).roundToInt().coerceIn(0, 4095)
 
@@ -378,13 +363,6 @@ class TabletCanvasView @JvmOverloads constructor(
         val statusColor = if (isTipDown) Color.parseColor("#38BDF8") else if (isInRange) Color.parseColor("#34D399") else Color.parseColor("#64748B")
         drawItem("STATE: ", statusText, statusColor)
 
-        val monName = when (monitorMapping) {
-            MonitorMapping.MONITOR_1 -> "MON 1"
-            MonitorMapping.LEFT_HALF -> "LEFT 1/2"
-            MonitorMapping.RIGHT_HALF -> "RIGHT 1/2"
-            MonitorMapping.ALL_MONITORS -> "SPANNED"
-        }
-        drawItem("MAP: ", monName, Color.parseColor("#818CF8"))
 
         val posStr = "${(currentNormX * 100).roundToInt()}%, ${(currentNormY * 100).roundToInt()}%"
         drawItem("POS: ", posStr, Color.parseColor("#F3F4F6"))

@@ -19,7 +19,7 @@ An open-source Android application that turns your **Samsung Galaxy Tab S6 Lite*
   - **Hardware Palm Rejection:** Rejects touch gestures from fingers/palms while drawing.
 
 - **Screenless Tablet Optimizations:**
-  - **Multi-Monitor Display Switching:** Instantly switch coordinate mapping between **Monitor 1 (Left Half)**, **Monitor 2 (Right Half)**, or **Entire Virtual Desktop** directly from the tablet.
+  - **1:1 Main Monitor Precision Mapping:** Full absolute coordinate mapping (0..32,767) mapped directly to your primary display.
   - **1:1 Aspect Ratio Mapping:** Letterboxing with visual guide frames for **16:9** (standard monitors) and **16:10** (full tablet) so circles drawn on tablet remain circles on your display.
   - **Tactile Edge Haptics:** Gentle haptic vibration pulse whenever the S-Pen tip crosses outside the active monitor drawing boundary.
   - **True Blackout Battery Saver Mode:** Turns the entire display pitch black, dims screen brightness to near-zero, and displays only 4 subtle phosphor-cyan corner guides for 12+ hours of battery life and zero screen glare.
