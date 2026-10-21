@@ -30,9 +30,10 @@ class TabletCanvasView @JvmOverloads constructor(
     }
 
     enum class MonitorMapping(val title: String, val minXRatio: Float, val maxXRatio: Float) {
-        ALL_MONITORS("Full Desktop", 0.0f, 1.0f),
-        MONITOR_1("Monitor 1", 0.0f, 0.5f),
-        MONITOR_2("Monitor 2", 0.5f, 1.0f)
+        MONITOR_1("Monitor 1 (Full)", 0.0f, 1.0f),
+        LEFT_HALF("Left Half", 0.0f, 0.5f),
+        RIGHT_HALF("Right Half", 0.5f, 1.0f),
+        ALL_MONITORS("Spanned Desktop", 0.0f, 1.0f)
     }
 
     var aspectRatioMode: AspectRatioMode = AspectRatioMode.MONITOR_16_9
@@ -42,7 +43,7 @@ class TabletCanvasView @JvmOverloads constructor(
             invalidate()
         }
 
-    var monitorMapping: MonitorMapping = MonitorMapping.ALL_MONITORS
+    var monitorMapping: MonitorMapping = MonitorMapping.MONITOR_1
         set(value) {
             field = value
             invalidate()
@@ -53,6 +54,8 @@ class TabletCanvasView @JvmOverloads constructor(
             field = value
             invalidate()
         }
+
+    var onExitBlackoutRequested: (() -> Unit)? = null
 
     var onPenEventListener: ((
         tipDown: Boolean,
@@ -196,9 +199,15 @@ class TabletCanvasView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        // Reject finger touches when drawing with S-Pen (palm rejection)
+        // Handle finger touches
         val toolType = event.getToolType(0)
         if (toolType != MotionEvent.TOOL_TYPE_STYLUS && toolType != MotionEvent.TOOL_TYPE_ERASER) {
+            // If in Blackout mode, tapping with a finger immediately wakes up the UI
+            if (isBlackoutMode && event.actionMasked == MotionEvent.ACTION_UP) {
+                onExitBlackoutRequested?.invoke()
+                return true
+            }
+            // Otherwise ignore finger touches for palm rejection while drawing
             return false
         }
 

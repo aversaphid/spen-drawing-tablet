@@ -64,17 +64,17 @@ class MainActivity : AppCompatActivity() {
         binding.toggleMonitor.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (isChecked) {
                 when (checkedId) {
-                    R.id.btnMonAll -> {
-                        binding.canvasView.monitorMapping = TabletCanvasView.MonitorMapping.ALL_MONITORS
-                        Toast.makeText(this, "Mapped to Entire Virtual Desktop", Toast.LENGTH_SHORT).show()
-                    }
                     R.id.btnMon1 -> {
                         binding.canvasView.monitorMapping = TabletCanvasView.MonitorMapping.MONITOR_1
-                        Toast.makeText(this, "Mapped to Monitor 1 (Left Half)", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "Mapped to Monitor 1 (Full Screen: 100%)", Toast.LENGTH_SHORT).show()
                     }
-                    R.id.btnMon2 -> {
-                        binding.canvasView.monitorMapping = TabletCanvasView.MonitorMapping.MONITOR_2
-                        Toast.makeText(this, "Mapped to Monitor 2 (Right Half)", Toast.LENGTH_SHORT).show()
+                    R.id.btnSplitLeft -> {
+                        binding.canvasView.monitorMapping = TabletCanvasView.MonitorMapping.LEFT_HALF
+                        Toast.makeText(this, "Mapped to Left Half (50%)", Toast.LENGTH_SHORT).show()
+                    }
+                    R.id.btnSplitRight -> {
+                        binding.canvasView.monitorMapping = TabletCanvasView.MonitorMapping.RIGHT_HALF
+                        Toast.makeText(this, "Mapped to Right Half (50%)", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -101,6 +101,13 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnWakeUI.setOnClickListener {
             disableBlackoutMode()
+        }
+
+        // Wake from blackout when tapping screen with a finger
+        binding.canvasView.onExitBlackoutRequested = {
+            runOnUiThread {
+                disableBlackoutMode()
+            }
         }
 
         // 5. Connect / Disconnect Button
@@ -138,12 +145,12 @@ class MainActivity : AppCompatActivity() {
         binding.btnWakeUI.visibility = View.VISIBLE
         binding.canvasView.isBlackoutMode = true
 
-        // Dim screen to minimum brightness to conserve battery
+        // Dim screen to comfortable low brightness (5%) so it's readable but saves battery
         val lp = window.attributes
-        lp.screenBrightness = 0.01f
+        lp.screenBrightness = 0.06f
         window.attributes = lp
 
-        Toast.makeText(this, "Blackout Mode Active (Tap top-right to wake)", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Blackout Active • Tap screen with finger to wake", Toast.LENGTH_SHORT).show()
     }
 
     private fun disableBlackoutMode() {
@@ -151,7 +158,7 @@ class MainActivity : AppCompatActivity() {
         binding.btnWakeUI.visibility = View.GONE
         binding.canvasView.isBlackoutMode = false
 
-        // Restore normal brightness
+        // Restore normal screen brightness
         val lp = window.attributes
         lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
         window.attributes = lp

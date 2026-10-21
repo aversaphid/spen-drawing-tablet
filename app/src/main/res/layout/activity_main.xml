@@ -87,31 +87,31 @@
                 android:id="@+id/toggleMonitor"
                 android:layout_width="wrap_content"
                 android:layout_height="36dp"
-                app:checkedButton="@id/btnMonAll"
+                app:checkedButton="@id/btnMon1"
                 app:singleSelection="true">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnMonAll"
-                    style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="match_parent"
-                    android:text="All"
-                    android:textSize="10sp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnMon1"
                     style="?attr/materialButtonOutlinedStyle"
                     android:layout_width="wrap_content"
                     android:layout_height="match_parent"
-                    android:text="Mon 1"
+                    android:text="Mon 1 (Full)"
                     android:textSize="10sp" />
 
                 <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnMon2"
+                    android:id="@+id/btnSplitLeft"
                     style="?attr/materialButtonOutlinedStyle"
                     android:layout_width="wrap_content"
                     android:layout_height="match_parent"
-                    android:text="Mon 2"
+                    android:text="Left 1/2"
+                    android:textSize="10sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSplitRight"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:text="Right 1/2"
                     android:textSize="10sp" />
             </com.google.android.material.button.MaterialButtonToggleGroup>
 
@@ -180,20 +180,25 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/cardTopBar" />
 
-    <!-- Restore UI Button (Shown in Blackout/Immersive mode to wake up) -->
+    <!-- Restore UI Button (Shown in Blackout mode to wake up) -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnWakeUI"
         style="@style/Widget.Material3.Button.TonalButton"
         android:layout_width="wrap_content"
-        android:layout_height="38dp"
-        android:layout_margin="12dp"
-        android:alpha="0.25"
-        android:text="Tap to Exit Blackout"
-        android:textColor="@color/text_main"
-        android:textSize="10sp"
+        android:layout_height="44dp"
+        android:layout_marginTop="16dp"
+        android:alpha="0.85"
+        android:paddingHorizontal="20dp"
+        android:text="🌙 Tap with finger anywhere to Exit Blackout"
+        android:textColor="@color/primary_accent"
+        android:textSize="12sp"
         android:visibility="gone"
-        app:cornerRadius="8dp"
+        app:backgroundTint="#D0181B22"
+        app:cornerRadius="22dp"
+        app:strokeColor="@color/primary_accent"
+        app:strokeWidth="1dp"
         app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
