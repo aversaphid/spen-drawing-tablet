@@ -27,21 +27,6 @@
             android:paddingHorizontal="14dp"
             android:paddingVertical="8dp">
 
-            <!-- Title & Status -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="S-Pen Tablet"
-                android:textColor="@color/text_main"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <View
-                android:layout_width="1dp"
-                android:layout_height="22dp"
-                android:layout_marginHorizontal="12dp"
-                android:background="#334155" />
-
             <!-- Status Indicator -->
             <TextView
                 android:id="@+id/tvStatus"
@@ -60,8 +45,9 @@
                 android:id="@+id/spinnerDevices"
                 android:layout_width="0dp"
                 android:layout_height="36dp"
-                android:layout_marginStart="12dp"
+                android:layout_marginStart="10dp"
                 android:layout_weight="1"
+                android:minWidth="160dp"
                 android:background="@color/surface_card"
                 android:paddingHorizontal="8dp" />
 
@@ -72,6 +58,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="36dp"
                 android:layout_marginStart="8dp"
+                android:paddingHorizontal="12dp"
                 android:text="@string/connect"
                 android:textSize="11sp"
                 app:cornerRadius="8dp" />
@@ -79,7 +66,7 @@
             <View
                 android:layout_width="1dp"
                 android:layout_height="22dp"
-                android:layout_marginHorizontal="10dp"
+                android:layout_marginHorizontal="8dp"
                 android:background="#334155" />
 
             <!-- Monitor Selector -->
@@ -95,7 +82,8 @@
                     style="?attr/materialButtonOutlinedStyle"
                     android:layout_width="wrap_content"
                     android:layout_height="match_parent"
-                    android:text="Mon 1 (Full)"
+                    android:paddingHorizontal="10dp"
+                    android:text="Mon 1"
                     android:textSize="10sp" />
 
                 <com.google.android.material.button.MaterialButton
@@ -103,7 +91,8 @@
                     style="?attr/materialButtonOutlinedStyle"
                     android:layout_width="wrap_content"
                     android:layout_height="match_parent"
-                    android:text="Left 1/2"
+                    android:paddingHorizontal="10dp"
+                    android:text="Left"
                     android:textSize="10sp" />
 
                 <com.google.android.material.button.MaterialButton
@@ -111,7 +100,8 @@
                     style="?attr/materialButtonOutlinedStyle"
                     android:layout_width="wrap_content"
                     android:layout_height="match_parent"
-                    android:text="Right 1/2"
+                    android:paddingHorizontal="10dp"
+                    android:text="Right"
                     android:textSize="10sp" />
             </com.google.android.material.button.MaterialButtonToggleGroup>
 

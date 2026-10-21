@@ -116,13 +116,13 @@ class TabletCanvasView @JvmOverloads constructor(
 
     private val hudTextPaint = Paint().apply {
         color = Color.parseColor("#94A3B8")
-        textSize = 28f
+        textSize = 24f
         isAntiAlias = true
     }
 
     private val hudHighlightPaint = Paint().apply {
         color = Color.parseColor("#34D399")
-        textSize = 28f
+        textSize = 24f
         isFakeBoldText = true
         isAntiAlias = true
     }
@@ -360,29 +360,43 @@ class TabletCanvasView @JvmOverloads constructor(
             canvas.drawLine(rawTouchX, rawTouchY - radius - 8, rawTouchX, rawTouchY + radius + 8, cursorPaint)
         }
 
-        // 6. Draw telemetry HUD in bottom-left corner
-        val hudX = activeAreaRect.left + 30f
-        val hudY = activeAreaRect.bottom - 40f
+        // 6. Draw telemetry HUD in bottom-left corner with dynamic measurement (zero overlap)
+        var curX = activeAreaRect.left + 24f
+        val hudY = activeAreaRect.bottom - 22f
+
+        fun drawItem(label: String, value: String, valueColor: Int) {
+            if (label.isNotEmpty()) {
+                canvas.drawText(label, curX, hudY, hudTextPaint)
+                curX += hudTextPaint.measureText(label)
+            }
+            hudHighlightPaint.color = valueColor
+            canvas.drawText(value, curX, hudY, hudHighlightPaint)
+            curX += hudHighlightPaint.measureText(value) + 24f
+        }
+
         val statusText = if (isTipDown) "DRAWING" else if (isInRange) "HOVERING" else "OUT OF RANGE"
-        val statusColor = if (isTipDown) "#38BDF8" else if (isInRange) "#34D399" else "#64748B"
-        hudHighlightPaint.color = Color.parseColor(statusColor)
+        val statusColor = if (isTipDown) Color.parseColor("#38BDF8") else if (isInRange) Color.parseColor("#34D399") else Color.parseColor("#64748B")
+        drawItem("STATE: ", statusText, statusColor)
 
-        canvas.drawText("STATE: ", hudX, hudY, hudTextPaint)
-        canvas.drawText(statusText, hudX + 110f, hudY, hudHighlightPaint)
+        val monName = when (monitorMapping) {
+            MonitorMapping.MONITOR_1 -> "MON 1"
+            MonitorMapping.LEFT_HALF -> "LEFT 1/2"
+            MonitorMapping.RIGHT_HALF -> "RIGHT 1/2"
+            MonitorMapping.ALL_MONITORS -> "SPANNED"
+        }
+        drawItem("MAP: ", monName, Color.parseColor("#818CF8"))
 
-        val monLabel = "[${monitorMapping.title.uppercase()}] "
-        val posText = "${monLabel}POS: ${(currentNormX * 100).roundToInt()}%, ${(currentNormY * 100).roundToInt()}%"
-        canvas.drawText(posText, hudX + 330f, hudY, hudTextPaint)
+        val posStr = "${(currentNormX * 100).roundToInt()}%, ${(currentNormY * 100).roundToInt()}%"
+        drawItem("POS: ", posStr, Color.parseColor("#F3F4F6"))
 
-        val pressText = "PRESSURE: ${(currentPressure * 100).roundToInt()}%"
-        canvas.drawText(pressText, hudX + 660f, hudY, hudTextPaint)
+        val pressStr = "${(currentPressure * 100).roundToInt()}%"
+        drawItem("PRESSURE: ", pressStr, Color.parseColor("#38BDF8"))
 
-        val tiltText = "TILT: ${currentTiltX}°, ${currentTiltY}°"
-        canvas.drawText(tiltText, hudX + 920f, hudY, hudTextPaint)
+        val tiltStr = "${currentTiltX}°, ${currentTiltY}°"
+        drawItem("TILT: ", tiltStr, Color.parseColor("#F3F4F6"))
 
         if (isBarrelPressed) {
-            hudHighlightPaint.color = Color.parseColor("#FBBF24")
-            canvas.drawText("[BUTTON]", hudX + 1120f, hudY, hudHighlightPaint)
+            drawItem("", "[BUTTON]", Color.parseColor("#FBBF24"))
         }
     }
 }

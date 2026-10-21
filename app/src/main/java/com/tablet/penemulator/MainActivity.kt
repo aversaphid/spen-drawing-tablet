@@ -284,9 +284,9 @@ class MainActivity : AppCompatActivity() {
         pairedDevicesList.addAll(sortedList)
 
         val names = pairedDevicesList.map { device ->
-            val name = device.name ?: "Unknown Device"
+            val name = device.name?.takeIf { it.isNotBlank() } ?: device.address ?: "Device"
             val isLast = device.address.equals(lastAddress, ignoreCase = true)
-            if (isLast) "⭐ $name (Last Used)" else "$name (${device.address})"
+            if (isLast) "⭐ $name" else name
         }
 
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, names)
