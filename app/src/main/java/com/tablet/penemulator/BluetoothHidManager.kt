@@ -126,7 +126,7 @@ class BluetoothHidManager(
         return true
     }
 
-    var isTurboMode = true
+    var isTurboMode = false
 
     @SuppressLint("MissingPermission")
     fun registerHidApp() {

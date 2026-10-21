@@ -202,9 +202,11 @@ class TabletCanvasView @JvmOverloads constructor(
         // Handle finger touches
         val toolType = event.getToolType(0)
         if (toolType != MotionEvent.TOOL_TYPE_STYLUS && toolType != MotionEvent.TOOL_TYPE_ERASER) {
-            // If in Blackout mode, tapping with a finger immediately wakes up the UI
-            if (isBlackoutMode && event.actionMasked == MotionEvent.ACTION_UP) {
-                onExitBlackoutRequested?.invoke()
+            // If in Blackout mode, any finger touch immediately wakes up the UI
+            if (isBlackoutMode) {
+                if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_UP) {
+                    onExitBlackoutRequested?.invoke()
+                }
                 return true
             }
             // Otherwise ignore finger touches for palm rejection while drawing

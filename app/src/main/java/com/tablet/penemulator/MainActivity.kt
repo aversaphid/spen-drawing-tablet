@@ -22,6 +22,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var bluetoothManager: BluetoothHidManager
 
+    companion object {
+        private const val PREFS_NAME = "pen_emulator_prefs"
+        private const val KEY_LAST_DEVICE_ADDRESS = "last_connected_device_address"
+    }
+
     private var pairedDevicesList = mutableListOf<BluetoothDevice>()
 
     private val permissionLauncher = registerForActivityResult(
@@ -99,11 +104,23 @@ class MainActivity : AppCompatActivity() {
             enableBlackoutMode()
         }
 
-        binding.btnWakeUI.setOnClickListener {
-            disableBlackoutMode()
+        // Only wake on finger touch (ignore S-Pen so accidental pen hovering/drawing never closes blackout)
+        binding.btnWakeUI.setOnTouchListener { _, event ->
+            val tool = event.getToolType(0)
+            if (tool == android.view.MotionEvent.TOOL_TYPE_STYLUS ||
+                tool == android.view.MotionEvent.TOOL_TYPE_ERASER) {
+                // Reject pen touches on the wake button
+                false
+            } else {
+                if (event.actionMasked == android.view.MotionEvent.ACTION_UP ||
+                    event.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+                    disableBlackoutMode()
+                }
+                true
+            }
         }
 
-        // Wake from blackout when tapping screen with a finger
+        // Wake from blackout when tapping screen anywhere with a finger
         binding.canvasView.onExitBlackoutRequested = {
             runOnUiThread {
                 disableBlackoutMode()
@@ -214,6 +231,14 @@ class MainActivity : AppCompatActivity() {
                             val deviceName = device?.name ?: device?.address ?: "Host"
                             updateStatus("Connected: $deviceName", Color.parseColor("#34D399"))
                             binding.btnConnect.text = getString(R.string.disconnect)
+
+                            // Save as last connected device
+                            device?.address?.let { addr ->
+                                getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                                    .edit()
+                                    .putString(KEY_LAST_DEVICE_ADDRESS, addr)
+                                    .apply()
+                            }
                         }
                         BluetoothProfile.STATE_CONNECTING -> {
                             updateStatus("Connecting...", Color.parseColor("#FBBF24"))
@@ -245,16 +270,31 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("MissingPermission")
     private fun refreshPairedDevices() {
         val paired = bluetoothManager.getPairedDevices()
+        val lastAddress = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getString(KEY_LAST_DEVICE_ADDRESS, null)
+
+        // Prioritize last connected device as the first initial tried device (index 0)
+        val sortedList = if (!lastAddress.isNullOrEmpty()) {
+            paired.sortedByDescending { it.address.equals(lastAddress, ignoreCase = true) }
+        } else {
+            paired
+        }
+
         pairedDevicesList.clear()
-        pairedDevicesList.addAll(paired)
+        pairedDevicesList.addAll(sortedList)
 
         val names = pairedDevicesList.map { device ->
             val name = device.name ?: "Unknown Device"
-            "$name (${device.address})"
+            val isLast = device.address.equals(lastAddress, ignoreCase = true)
+            if (isLast) "⭐ $name (Last Used)" else "$name (${device.address})"
         }
 
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, names)
         binding.spinnerDevices.adapter = adapter
+
+        if (pairedDevicesList.isNotEmpty()) {
+            binding.spinnerDevices.setSelection(0)
+        }
 
         if (names.isEmpty()) {
             Toast.makeText(this, "No paired devices found. Pair your PC in Android Bluetooth Settings.", Toast.LENGTH_LONG).show()
