@@ -42,8 +42,6 @@ class TabletCanvasView @JvmOverloads constructor(
             invalidate()
         }
 
-    var onExitBlackoutRequested: (() -> Unit)? = null
-
     var onPenEventListener: ((
         tipDown: Boolean,
         barrelButton: Boolean,
@@ -186,17 +184,9 @@ class TabletCanvasView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        // Handle finger touches
+        // Strict palm rejection: ignore finger/hand touches at all times so resting your hand never interferes
         val toolType = event.getToolType(0)
         if (toolType != MotionEvent.TOOL_TYPE_STYLUS && toolType != MotionEvent.TOOL_TYPE_ERASER) {
-            // If in Blackout mode, any finger touch immediately wakes up the UI
-            if (isBlackoutMode) {
-                if (event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_UP) {
-                    onExitBlackoutRequested?.invoke()
-                }
-                return true
-            }
-            // Otherwise ignore finger touches for palm rejection while drawing
             return false
         }
 

@@ -84,7 +84,7 @@ class MainActivity : AppCompatActivity() {
             enableBlackoutMode()
         }
 
-        // Only wake on finger touch (ignore S-Pen so accidental pen hovering/drawing never closes blackout)
+        // Only wake on finger touch on this bar (ignore S-Pen so drawing never closes blackout)
         binding.btnWakeUI.setOnTouchListener { _, event ->
             val tool = event.getToolType(0)
             if (tool == android.view.MotionEvent.TOOL_TYPE_STYLUS ||
@@ -92,18 +92,10 @@ class MainActivity : AppCompatActivity() {
                 // Reject pen touches on the wake button
                 false
             } else {
-                if (event.actionMasked == android.view.MotionEvent.ACTION_UP ||
-                    event.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+                if (event.actionMasked == android.view.MotionEvent.ACTION_UP) {
                     disableBlackoutMode()
                 }
                 true
-            }
-        }
-
-        // Wake from blackout when tapping screen anywhere with a finger
-        binding.canvasView.onExitBlackoutRequested = {
-            runOnUiThread {
-                disableBlackoutMode()
             }
         }
 
@@ -147,7 +139,7 @@ class MainActivity : AppCompatActivity() {
         lp.screenBrightness = 0.06f
         window.attributes = lp
 
-        Toast.makeText(this, "Blackout Active • Tap screen with finger to wake", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Blackout Active • Tap top bar with finger to exit", Toast.LENGTH_SHORT).show()
     }
 
     private fun disableBlackoutMode() {
