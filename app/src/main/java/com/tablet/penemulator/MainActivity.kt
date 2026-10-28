@@ -128,6 +128,7 @@ class MainActivity : AppCompatActivity() {
         if (::bluetoothManager.isInitialized) {
             if (bluetoothManager.isRegistered) {
                 refreshPairedDevices()
+                bluetoothManager.checkActiveConnection()
             } else {
                 val adapter = BluetoothAdapter.getDefaultAdapter()
                 if (adapter != null && adapter.isEnabled && bluetoothManager.hidDevice == null) {
@@ -231,16 +232,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 6. Wire canvas pen events to Bluetooth HID
-        binding.canvasView.onPenEventListener = { tipDown, barrelButton, inRange, x, y, pressure, tiltX, tiltY ->
+        binding.canvasView.onPenEventListener = { tipDown, barrelButton, inRange, x, y, pressure, _, _ ->
             bluetoothManager.sendPenReport(
                 tipDown = tipDown,
                 barrelButton = barrelButton,
                 inRange = inRange,
                 x = x,
                 y = y,
-                pressure = pressure,
-                tiltX = tiltX,
-                tiltY = tiltY
+                pressure = pressure
             )
         }
     }

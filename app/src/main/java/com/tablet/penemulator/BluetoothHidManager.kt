@@ -91,6 +91,7 @@ class BluetoothHidManager(
                 retryCount = 0
                 mainHandler.removeCallbacks(retryRunnable)
                 listener.onAppRegistered(true)
+                checkActiveConnection()
             } else {
                 isRegistered = false
                 if (regState == RegState.UNREGISTERING_FOR_RETRY) {
@@ -150,9 +151,7 @@ class BluetoothHidManager(
                     inRange = false,
                     x = 0,
                     y = 0,
-                    pressure = 0,
-                    tiltX = 0,
-                    tiltY = 0
+                    pressure = 0
                 )
                 try {
                     hidDevice?.replyReport(device, type, id, emptyReport)
@@ -234,12 +233,11 @@ class BluetoothHidManager(
             "Tab S6 Lite Digitizer",
             "S-Pen Graphics Tablet",
             "OpenTablet",
-            BluetoothHidDevice.SUBCLASS2_DIGITIZER_TABLET,
+            BluetoothHidDevice.SUBCLASS1_COMBO,
             HidDescriptor.REPORT_DESCRIPTOR
         )
 
-        // For retries >= 2 or when requested, pass null QoS (system default)
-        // because certain Bluetooth controller firmwares reject custom token rates or latency settings
+        // Standard, robust Best Effort QoS profile for low-latency tablet polling
         val (inQos, outQos) = if (attemptDefaultQos || retryCount >= 2) {
             Log.d(tag, "Applying default (null) QoS settings for controller compatibility")
             Pair(null, null)
@@ -249,16 +247,16 @@ class BluetoothHidManager(
             val inQ = BluetoothHidDeviceAppQosSettings(
                 BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT,
                 tokenRate,
-                18,
-                0,
+                9,
+                1000,
                 latencyUs,
                 BluetoothHidDeviceAppQosSettings.MAX
             )
             val outQ = BluetoothHidDeviceAppQosSettings(
                 BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT,
                 tokenRate,
-                18,
-                0,
+                9,
+                1000,
                 latencyUs,
                 BluetoothHidDeviceAppQosSettings.MAX
             )
@@ -452,6 +450,20 @@ class BluetoothHidManager(
         }
     }
 
+    /**
+     * Inspects proxy for existing established connections (e.g. initiated by PC)
+     */
+    @SuppressLint("MissingPermission")
+    fun checkActiveConnection() {
+        val proxy = hidDevice ?: return
+        val connected = proxy.connectedDevices?.firstOrNull()
+        if (connected != null && connectedDevice?.address != connected.address) {
+            Log.d(tag, "Found active connected device: ${connected.name ?: connected.address}")
+            connectedDevice = connected
+            listener.onConnectionStateChanged(connected, BluetoothProfile.STATE_CONNECTED)
+        }
+    }
+
     @SuppressLint("MissingPermission")
     fun sendPenReport(
         tipDown: Boolean,
@@ -459,9 +471,7 @@ class BluetoothHidManager(
         inRange: Boolean,
         x: Int,
         y: Int,
-        pressure: Int,
-        tiltX: Int,
-        tiltY: Int
+        pressure: Int
     ): Boolean {
         val proxy = hidDevice ?: return false
         val device = connectedDevice ?: run {
@@ -481,9 +491,7 @@ class BluetoothHidManager(
             inRange = inRange,
             x = x,
             y = y,
-            pressure = pressure,
-            tiltX = tiltX,
-            tiltY = tiltY
+            pressure = pressure
         )
 
         return try {
