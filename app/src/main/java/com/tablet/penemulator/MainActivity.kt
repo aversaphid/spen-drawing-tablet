@@ -126,13 +126,15 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (::bluetoothManager.isInitialized) {
-            if (bluetoothManager.isRegistered) {
-                refreshPairedDevices()
-                bluetoothManager.checkActiveConnection()
-            } else {
-                val adapter = BluetoothAdapter.getDefaultAdapter()
-                if (adapter != null && adapter.isEnabled && bluetoothManager.hidDevice == null) {
+            val adapter = BluetoothAdapter.getDefaultAdapter()
+            if (adapter != null && adapter.isEnabled) {
+                if (bluetoothManager.isRegistered) {
+                    refreshPairedDevices()
+                    bluetoothManager.checkActiveConnection()
+                } else if (bluetoothManager.hidDevice == null) {
                     bluetoothManager.initialize()
+                } else {
+                    bluetoothManager.registerHidApp()
                 }
             }
         }
@@ -205,8 +207,9 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            if (bluetoothManager.connectedDevice != null) {
-                // Currently connected -> Disconnect
+            if (bluetoothManager.connectedDevice != null ||
+                (bluetoothManager.hidDevice?.connectedDevices?.isNotEmpty() == true)) {
+                // Currently connected -> Disconnect immediately
                 bluetoothManager.disconnect()
             } else if (isConnecting) {
                 // Currently in connection attempt -> Cancel

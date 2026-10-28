@@ -51,7 +51,10 @@ class TabletCanvasView @JvmOverloads constructor(
         pressure: Int,
         tiltX: Int,
         tiltY: Int
-    ) -> Unit)? = null
+    ) -> Boolean)? = null
+
+    var reportsSentCount = 0
+    var reportsDeliveredCount = 0
 
     // Active drawing area bounding rect
     private val activeAreaRect = RectF()
@@ -184,12 +187,6 @@ class TabletCanvasView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        // Strict palm rejection: ignore finger/hand touches at all times so resting your hand never interferes
-        val toolType = event.getToolType(0)
-        if (toolType != MotionEvent.TOOL_TYPE_STYLUS && toolType != MotionEvent.TOOL_TYPE_ERASER) {
-            return false
-        }
-
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN,
             MotionEvent.ACTION_MOVE -> {
@@ -226,10 +223,16 @@ class TabletCanvasView @JvmOverloads constructor(
         currentNormX = (clampedX - activeAreaRect.left) / activeWidth
         currentNormY = (clampedY - activeAreaRect.top) / activeHeight
 
-        currentPressure = if (tipDown) event.pressure.coerceIn(0f, 1f) else 0f
+        val toolType = event.getToolType(0)
+        val isStylus = (toolType == MotionEvent.TOOL_TYPE_STYLUS || toolType == MotionEvent.TOOL_TYPE_ERASER)
+        currentPressure = if (tipDown) {
+            if (isStylus) event.pressure.coerceIn(0.01f, 1f) else 0.5f
+        } else {
+            0f
+        }
         isTipDown = tipDown
         isInRange = inRange
-        isBarrelPressed = event.isButtonPressed(MotionEvent.BUTTON_STYLUS_PRIMARY)
+        isBarrelPressed = if (isStylus) event.isButtonPressed(MotionEvent.BUTTON_STYLUS_PRIMARY) else false
 
         // Calculate Tilt
         val tiltRad = event.getAxisValue(MotionEvent.AXIS_TILT)
@@ -248,7 +251,7 @@ class TabletCanvasView @JvmOverloads constructor(
         val hidY = (currentNormY * 32767).roundToInt().coerceIn(0, 32767)
         val hidPressure = (currentPressure * 4095).roundToInt().coerceIn(0, 4095)
 
-        onPenEventListener?.invoke(
+        val delivered = onPenEventListener?.invoke(
             isTipDown,
             isBarrelPressed,
             isInRange,
@@ -257,7 +260,12 @@ class TabletCanvasView @JvmOverloads constructor(
             hidPressure,
             currentTiltX,
             currentTiltY
-        )
+        ) ?: false
+
+        reportsSentCount++
+        if (delivered) {
+            reportsDeliveredCount++
+        }
 
         invalidate()
     }
@@ -287,7 +295,7 @@ class TabletCanvasView @JvmOverloads constructor(
             canvas.drawLine(activeAreaRect.left, activeAreaRect.top, activeAreaRect.left, activeAreaRect.top + cornerLen, stealthCornerPaint)
             // Top-right
             canvas.drawLine(activeAreaRect.right, activeAreaRect.top, activeAreaRect.right - cornerLen, activeAreaRect.top, stealthCornerPaint)
-            canvas.drawLine(activeAreaRect.right, activeAreaRect.top, activeAreaRect.right, activeAreaRect.top + cornerLen, stealthCornerPaint)
+            canvas.drawLine(activeAreaRect.right, activeAreaRect.top, activeAreaRect.right, activeAreaRect.top - cornerLen, stealthCornerPaint)
             // Bottom-left
             canvas.drawLine(activeAreaRect.left, activeAreaRect.bottom, activeAreaRect.left + cornerLen, activeAreaRect.bottom, stealthCornerPaint)
             canvas.drawLine(activeAreaRect.left, activeAreaRect.bottom, activeAreaRect.left, activeAreaRect.bottom - cornerLen, stealthCornerPaint)
@@ -353,6 +361,8 @@ class TabletCanvasView @JvmOverloads constructor(
         val statusColor = if (isTipDown) Color.parseColor("#38BDF8") else if (isInRange) Color.parseColor("#34D399") else Color.parseColor("#64748B")
         drawItem("STATE: ", statusText, statusColor)
 
+        val pktColor = if (reportsDeliveredCount > 0) Color.parseColor("#34D399") else Color.parseColor("#94A3B8")
+        drawItem("PKTS: ", "$reportsDeliveredCount", pktColor)
 
         val posStr = "${(currentNormX * 100).roundToInt()}%, ${(currentNormY * 100).roundToInt()}%"
         drawItem("POS: ", posStr, Color.parseColor("#F3F4F6"))

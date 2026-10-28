@@ -15,7 +15,7 @@ object HidDescriptor {
      * - Tip Switch (bit 0: drawing / contact)
      * - In Range (bit 1: S-Pen hover detection)
      * - Barrel Switch (bit 2: S-Pen side button)
-     * - X, Y absolute coordinates (0..32767)
+     * - X, Y absolute coordinates (0..32767) with WHQL-compliant DPI >= 150
      * - Tip Pressure (0..4095)
      */
     val REPORT_DESCRIPTOR: ByteArray = byteArrayOf(
@@ -40,34 +40,34 @@ object HidDescriptor {
         0x95.toByte(), 0x05.toByte(),        //     Report Count (5 bits padding to complete byte)
         0x81.toByte(), 0x03.toByte(),        //     Input (Const,Var,Abs)
 
-        // X Coordinate (16-bit: 0..32767)
+        // X Coordinate (16-bit: 0..32767, Physical 0..8250 x 10^-3 inches = 3971 DPI)
         0x05.toByte(), 0x01.toByte(),        //     Usage Page (Generic Desktop)
         0x09.toByte(), 0x30.toByte(),        //     Usage (X)
-        0x15.toByte(), 0x00.toByte(),        //     Logical Minimum (0)
-        0x26.toByte(), 0xFF.toByte(), 0x7F.toByte(), // Logical Maximum (32767)
-        0x35.toByte(), 0x00.toByte(),        //     Physical Minimum (0)
-        0x46.toByte(), 0xFF.toByte(), 0x7F.toByte(), // Physical Maximum (32767)
         0x75.toByte(), 0x10.toByte(),        //     Report Size (16 bits)
         0x95.toByte(), 0x01.toByte(),        //     Report Count (1)
+        0x55.toByte(), 0x0D.toByte(),        //     Unit Exponent (-3)
+        0x65.toByte(), 0x13.toByte(),        //     Unit (Inch,EngLinear)
+        0x35.toByte(), 0x00.toByte(),        //     Physical Minimum (0)
+        0x46.toByte(), 0x3A.toByte(), 0x20.toByte(), // Physical Maximum (8250 -> 8.25 inches)
+        0x15.toByte(), 0x00.toByte(),        //     Logical Minimum (0)
+        0x26.toByte(), 0xFF.toByte(), 0x7F.toByte(), // Logical Maximum (32767)
         0x81.toByte(), 0x02.toByte(),        //     Input (Data,Var,Abs)
 
-        // Y Coordinate (16-bit: 0..32767)
+        // Y Coordinate (16-bit: 0..32767, Physical 0..6188 x 10^-3 inches = 5295 DPI)
         0x09.toByte(), 0x31.toByte(),        //     Usage (Y)
-        0x15.toByte(), 0x00.toByte(),        //     Logical Minimum (0)
+        0x46.toByte(), 0x2C.toByte(), 0x18.toByte(), // Physical Maximum (6188 -> 6.188 inches)
         0x26.toByte(), 0xFF.toByte(), 0x7F.toByte(), // Logical Maximum (32767)
-        0x35.toByte(), 0x00.toByte(),        //     Physical Minimum (0)
-        0x46.toByte(), 0xFF.toByte(), 0x7F.toByte(), // Physical Maximum (32767)
-        0x75.toByte(), 0x10.toByte(),        //     Report Size (16 bits)
-        0x95.toByte(), 0x01.toByte(),        //     Report Count (1)
         0x81.toByte(), 0x02.toByte(),        //     Input (Data,Var,Abs)
 
-        // Tip Pressure (16-bit: 0..4095)
+        // Tip Pressure (16-bit: 0..4095, dimensionless)
         0x05.toByte(), 0x0D.toByte(),        //     Usage Page (Digitizers)
         0x09.toByte(), 0x30.toByte(),        //     Usage (Tip Pressure)
-        0x15.toByte(), 0x00.toByte(),        //     Logical Minimum (0)
-        0x26.toByte(), 0xFF.toByte(), 0x0F.toByte(), // Logical Maximum (4095)
+        0x65.toByte(), 0x00.toByte(),        //     Unit (None) - reset linear unit
+        0x55.toByte(), 0x00.toByte(),        //     Unit Exponent (0) - reset exponent
         0x35.toByte(), 0x00.toByte(),        //     Physical Minimum (0)
         0x46.toByte(), 0xFF.toByte(), 0x0F.toByte(), // Physical Maximum (4095)
+        0x15.toByte(), 0x00.toByte(),        //     Logical Minimum (0)
+        0x26.toByte(), 0xFF.toByte(), 0x0F.toByte(), // Logical Maximum (4095)
         0x75.toByte(), 0x10.toByte(),        //     Report Size (16 bits)
         0x95.toByte(), 0x01.toByte(),        //     Report Count (1)
         0x81.toByte(), 0x02.toByte(),        //     Input (Data,Var,Abs)
@@ -89,11 +89,14 @@ object HidDescriptor {
     ): ByteArray {
         val report = ByteArray(7)
 
+        // Contact implies in-range
+        val effectiveInRange = inRange || tipDown
+
         // Byte 0: Flags
         var flags = 0
-        if (tipDown) flags = flags or 0x01      // bit 0 = Tip Switch
-        if (inRange) flags = flags or 0x02      // bit 1 = In Range
-        if (barrelButton) flags = flags or 0x04 // bit 2 = Barrel Switch
+        if (tipDown) flags = flags or 0x01          // bit 0 = Tip Switch
+        if (effectiveInRange) flags = flags or 0x02 // bit 1 = In Range
+        if (barrelButton) flags = flags or 0x04     // bit 2 = Barrel Switch
         report[0] = flags.toByte()
 
         // Byte 1-2: X coordinate (Little Endian, 0..32767)
