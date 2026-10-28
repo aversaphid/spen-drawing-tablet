@@ -67,8 +67,9 @@ class MainActivity : AppCompatActivity() {
                     if (state == BluetoothDevice.BOND_BONDED) {
                         runOnUiThread {
                             refreshPairedDevices()
-                            Toast.makeText(this@MainActivity, "Paired with ${device?.name ?: "PC"}! Connecting...", Toast.LENGTH_SHORT).show()
-                            device?.let { startConnection(it) }
+                            if (device != null && ::bluetoothManager.isInitialized) {
+                                bluetoothManager.onDeviceBonded(device)
+                            }
                         }
                     } else if (state == BluetoothDevice.BOND_NONE) {
                         runOnUiThread {
@@ -224,6 +225,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Pair PC Button -> Trigger 1-Tap Discoverability
+        binding.btnPair.setOnClickListener {
+            requestDiscoverability()
+        }
+
         // 6. Wire canvas pen events to Bluetooth HID
         binding.canvasView.onPenEventListener = { tipDown, barrelButton, inRange, x, y, pressure, tiltX, tiltY ->
             bluetoothManager.sendPenReport(
@@ -248,9 +254,10 @@ class MainActivity : AppCompatActivity() {
                 putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
             }
             startActivity(discoverableIntent)
+            updateStatus("Discoverable: '$deviceName'", Color.parseColor("#38BDF8"))
             Toast.makeText(
                 this,
-                "Tablet is now discoverable! On your PC, look for: '$deviceName'",
+                "Tablet is discoverable! On your PC, open Bluetooth Settings and select: '$deviceName'",
                 Toast.LENGTH_LONG
             ).show()
         } catch (e: Exception) {
@@ -390,6 +397,7 @@ class MainActivity : AppCompatActivity() {
                             val deviceName = device?.name ?: device?.address ?: "Host"
                             updateStatus("Connected: $deviceName", Color.parseColor("#34D399"))
                             binding.btnConnect.text = getString(R.string.disconnect)
+                            Toast.makeText(this@MainActivity, "Connected to $deviceName! Ready to draw.", Toast.LENGTH_SHORT).show()
 
                             // Save as last connected device
                             device?.address?.let { addr ->
@@ -398,6 +406,7 @@ class MainActivity : AppCompatActivity() {
                                     .putString(KEY_LAST_DEVICE_ADDRESS, addr)
                                     .apply()
                             }
+                            refreshPairedDevices()
                         }
                         BluetoothProfile.STATE_CONNECTING -> {
                             isConnecting = true
@@ -413,15 +422,16 @@ class MainActivity : AppCompatActivity() {
                             isConnecting = false
                             binding.btnConnect.text = getString(R.string.connect)
                             if (wasConnecting) {
-                                updateStatus("Connection Failed • Connect from PC", Color.parseColor("#F87171"))
+                                updateStatus("Refused by PC • Connect from PC", Color.parseColor("#F87171"))
                                 Toast.makeText(
                                     this@MainActivity,
-                                    "Host dropped connection. Tip: Click 'Connect' on your PC's Bluetooth menu.",
+                                    "Host dropped or refused connection. Tip: In Windows Bluetooth settings, click 'Connect' on this tablet.",
                                     Toast.LENGTH_LONG
                                 ).show()
                             } else {
-                                updateStatus("Disconnected", Color.parseColor("#9CA3AF"))
+                                updateStatus("Ready (Tap to Pair/Connect)", Color.parseColor("#34D399"))
                             }
+                            refreshPairedDevices()
                         }
                     }
                 }

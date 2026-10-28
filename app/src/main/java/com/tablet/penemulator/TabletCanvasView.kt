@@ -198,7 +198,7 @@ class TabletCanvasView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_UP,
             MotionEvent.ACTION_CANCEL -> {
-                processMotionEvent(event, tipDown = false, inRange = false)
+                processMotionEvent(event, tipDown = false, inRange = true)
                 return true
             }
         }

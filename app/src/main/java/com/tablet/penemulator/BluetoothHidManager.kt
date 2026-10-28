@@ -45,6 +45,9 @@ class BluetoothHidManager(
     var connectedDevice: BluetoothDevice? = null
         private set
 
+    // Holds device reference during initial pairing handshake before BOND_BONDED
+    private var pendingBondedDevice: BluetoothDevice? = null
+
     var isRegistered = false
         private set
 
@@ -113,16 +116,23 @@ class BluetoothHidManager(
             super.onConnectionStateChanged(device, state)
             Log.d(tag, "onConnectionStateChanged: device=${device?.name}, state=$state, bondState=${device?.bondState}")
             if (state == BluetoothProfile.STATE_CONNECTED) {
-                if (device?.bondState == BluetoothDevice.BOND_BONDED) {
-                    connectedDevice = device
-                    listener.onConnectionStateChanged(device, state)
-                } else {
-                    Log.d(tag, "Connection detected during initial pairing handshake (bondState=${device?.bondState})")
-                    listener.onPairingInProgress(device)
+                if (device != null) {
+                    if (device.bondState == BluetoothDevice.BOND_BONDED) {
+                        connectedDevice = device
+                        pendingBondedDevice = null
+                        listener.onConnectionStateChanged(device, state)
+                    } else {
+                        Log.d(tag, "Connection detected during initial pairing handshake (bondState=${device.bondState}). Holding pending connection...")
+                        pendingBondedDevice = device
+                        listener.onPairingInProgress(device)
+                    }
                 }
             } else if (state == BluetoothProfile.STATE_DISCONNECTED) {
-                if (connectedDevice == device) {
+                if (connectedDevice?.address == device?.address) {
                     connectedDevice = null
+                }
+                if (pendingBondedDevice?.address == device?.address) {
+                    pendingBondedDevice = null
                 }
                 listener.onConnectionStateChanged(device, state)
             } else {
@@ -358,6 +368,44 @@ class BluetoothHidManager(
         }
     }
 
+    /**
+     * Checks if a device has an active profile connection with BluetoothHidDevice.
+     */
+    @SuppressLint("MissingPermission")
+    fun isDeviceConnected(device: BluetoothDevice): Boolean {
+        if (connectedDevice?.address == device.address) return true
+        val proxy = hidDevice ?: return false
+        return try {
+            proxy.getConnectionState(device) == BluetoothProfile.STATE_CONNECTED
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Handles device bonding completion. If the device was already connected
+     * during the pairing handshake or by the host, promotes it immediately
+     * to the active session without disruptive reconnect attempts.
+     */
+    @SuppressLint("MissingPermission")
+    fun onDeviceBonded(device: BluetoothDevice) {
+        Log.d(tag, "onDeviceBonded: device=${device.name ?: device.address}")
+        val isAlreadyConnected = (pendingBondedDevice?.address == device.address) ||
+                (connectedDevice?.address == device.address) ||
+                isDeviceConnected(device) ||
+                (hidDevice?.connectedDevices?.any { it.address == device.address } == true)
+
+        if (isAlreadyConnected) {
+            Log.i(tag, "Device ${device.name ?: device.address} is already connected via HID. Activating session!")
+            pendingBondedDevice = null
+            connectedDevice = device
+            listener.onConnectionStateChanged(device, BluetoothProfile.STATE_CONNECTED)
+        } else {
+            Log.d(tag, "Device bonded but not yet connected. Attempting connection...")
+            connect(device)
+        }
+    }
+
     @SuppressLint("MissingPermission")
     fun connect(device: BluetoothDevice): Boolean {
         val proxy = hidDevice
@@ -371,6 +419,12 @@ class BluetoothHidManager(
             listener.onError("HID service not registered. Retrying...")
             retryRegistration()
             return false
+        }
+        if (connectedDevice?.address == device.address || isDeviceConnected(device)) {
+            Log.d(tag, "Device ${device.address} is already connected!")
+            connectedDevice = device
+            listener.onConnectionStateChanged(device, BluetoothProfile.STATE_CONNECTED)
+            return true
         }
         return try {
             val queued = proxy.connect(device)
@@ -410,7 +464,16 @@ class BluetoothHidManager(
         tiltY: Int
     ): Boolean {
         val proxy = hidDevice ?: return false
-        val device = connectedDevice ?: return false
+        val device = connectedDevice ?: run {
+            // Self-healing fallback: if an active connection exists in proxy, recover it
+            val active = proxy.connectedDevices?.firstOrNull()
+            if (active != null) {
+                connectedDevice = active
+                active
+            } else {
+                return false
+            }
+        }
 
         val reportData = HidDescriptor.buildReport(
             tipDown = tipDown,

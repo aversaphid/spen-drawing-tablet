@@ -65,6 +65,18 @@
                 android:textSize="11sp"
                 app:cornerRadius="8dp" />
 
+            <!-- Pair New PC Button -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPair"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginStart="6dp"
+                android:paddingHorizontal="10dp"
+                android:text="+ Pair PC"
+                android:textSize="11sp"
+                app:cornerRadius="8dp" />
+
             <View
                 android:layout_width="1dp"
                 android:layout_height="22dp"
