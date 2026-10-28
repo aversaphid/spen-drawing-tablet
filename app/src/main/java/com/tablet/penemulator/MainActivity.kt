@@ -2,6 +2,7 @@ package com.tablet.penemulator
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothProfile
 import android.content.pm.PackageManager
@@ -54,7 +55,29 @@ class MainActivity : AppCompatActivity() {
         checkPermissionsAndInit()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::bluetoothManager.isInitialized) {
+            if (bluetoothManager.isRegistered) {
+                refreshPairedDevices()
+            } else {
+                val adapter = BluetoothAdapter.getDefaultAdapter()
+                if (adapter != null && adapter.isEnabled && bluetoothManager.hidDevice == null) {
+                    bluetoothManager.initialize()
+                }
+            }
+        }
+    }
+
     private fun setupUI() {
+        // Status Badge Click -> Retry Registration if in failed / disconnected state
+        binding.tvStatus.setOnClickListener {
+            if (!bluetoothManager.isRegistered) {
+                Toast.makeText(this, "Retrying HID registration...", Toast.LENGTH_SHORT).show()
+                bluetoothManager.retryRegistration()
+            }
+        }
+
         // 1. Aspect Ratio Selection
         binding.toggleAspectRatio.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (isChecked) {
@@ -67,7 +90,11 @@ class MainActivity : AppCompatActivity() {
 
         // 2. Turbo Bluetooth Polling Toggle
         binding.btnTurbo.setOnClickListener {
-            bluetoothManager.isTurboMode = !bluetoothManager.isTurboMode
+            val targetTurbo = !bluetoothManager.isTurboMode
+            bluetoothManager.setTurboMode(targetTurbo) {
+                Toast.makeText(this, "Turbo mode QoS will apply upon reconnecting.", Toast.LENGTH_SHORT).show()
+            }
+
             if (bluetoothManager.isTurboMode) {
                 binding.btnTurbo.text = "Turbo ⚡ [ON]"
                 binding.btnTurbo.setTextColor(Color.parseColor("#38BDF8"))
@@ -101,6 +128,12 @@ class MainActivity : AppCompatActivity() {
 
         // 5. Connect / Disconnect Button
         binding.btnConnect.setOnClickListener {
+            if (!bluetoothManager.isRegistered) {
+                Toast.makeText(this, "HID not registered. Resetting and retrying...", Toast.LENGTH_SHORT).show()
+                bluetoothManager.retryRegistration()
+                return@setOnClickListener
+            }
+
             if (bluetoothManager.connectedDevice != null) {
                 bluetoothManager.disconnect()
             } else {
@@ -190,8 +223,19 @@ class MainActivity : AppCompatActivity() {
                         updateStatus("Ready to Pair / Connect", Color.parseColor("#34D399"))
                         refreshPairedDevices()
                     } else {
-                        updateStatus("HID Registration Failed", Color.parseColor("#F87171"))
+                        updateStatus("HID Reg Failed • Tap to Retry", Color.parseColor("#F87171"))
+                        Toast.makeText(
+                            this@MainActivity,
+                            "HID registration failed. Tap status badge to retry, or toggle Bluetooth.",
+                            Toast.LENGTH_LONG
+                        ).show()
                     }
+                }
+            }
+
+            override fun onRegistrationStatusChanged(message: String) {
+                runOnUiThread {
+                    updateStatus(message, Color.parseColor("#FBBF24"))
                 }
             }
 

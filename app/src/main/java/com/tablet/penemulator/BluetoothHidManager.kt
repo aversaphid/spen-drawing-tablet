@@ -8,6 +8,8 @@ import android.bluetooth.BluetoothHidDeviceAppQosSettings
 import android.bluetooth.BluetoothHidDeviceAppSdpSettings
 import android.bluetooth.BluetoothProfile
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import java.util.concurrent.Executors
 
@@ -21,10 +23,19 @@ class BluetoothHidManager(
         fun onAppRegistered(registered: Boolean)
         fun onConnectionStateChanged(device: BluetoothDevice?, state: Int)
         fun onError(message: String)
+        fun onRegistrationStatusChanged(message: String) {}
+    }
+
+    private enum class RegState {
+        UNREGISTERED,
+        REGISTERING,
+        REGISTERED,
+        UNREGISTERING_FOR_RETRY
     }
 
     private val tag = "BluetoothHidManager"
     private val executor = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private var bluetoothAdapter: BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
     var hidDevice: BluetoothHidDevice? = null
@@ -34,6 +45,13 @@ class BluetoothHidManager(
         private set
 
     var isRegistered = false
+        private set
+
+    private var regState = RegState.UNREGISTERED
+    private var retryCount = 0
+    private val maxRetries = 3
+
+    var isTurboMode = false
         private set
 
     private val serviceListener = object : BluetoothProfile.ServiceListener {
@@ -49,8 +67,10 @@ class BluetoothHidManager(
         override fun onServiceDisconnected(profile: Int) {
             if (profile == BluetoothProfile.HID_DEVICE) {
                 Log.d(tag, "BluetoothHidDevice service disconnected")
+                mainHandler.removeCallbacks(retryRunnable)
                 hidDevice = null
                 isRegistered = false
+                regState = RegState.UNREGISTERED
                 listener.onAppRegistered(false)
             }
         }
@@ -59,9 +79,33 @@ class BluetoothHidManager(
     private val hidCallback = object : BluetoothHidDevice.Callback() {
         override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
             super.onAppStatusChanged(pluggedDevice, registered)
-            Log.d(tag, "onAppStatusChanged: registered=$registered, device=$pluggedDevice")
-            isRegistered = registered
-            listener.onAppRegistered(registered)
+            Log.d(tag, "onAppStatusChanged: registered=$registered, device=$pluggedDevice, state=$regState, retries=$retryCount")
+
+            if (registered) {
+                isRegistered = true
+                regState = RegState.REGISTERED
+                retryCount = 0
+                mainHandler.removeCallbacks(retryRunnable)
+                listener.onAppRegistered(true)
+            } else {
+                isRegistered = false
+                if (regState == RegState.UNREGISTERING_FOR_RETRY) {
+                    // Stale unregistration confirmed by Android BT stack. Settle briefly, then register cleanly.
+                    Log.d(tag, "Unregistration completed. Proceeding with clean registration attempt...")
+                    mainHandler.removeCallbacks(retryRunnable)
+                    mainHandler.postDelayed({
+                        regState = RegState.UNREGISTERED
+                        executeRegistration(attemptDefaultQos = retryCount >= 2)
+                    }, 250)
+                } else if (regState == RegState.REGISTERING) {
+                    // Registration attempt rejected asynchronously
+                    Log.w(tag, "Registration was rejected asynchronously by BT service.")
+                    handleRegistrationFailure()
+                } else {
+                    regState = RegState.UNREGISTERED
+                    listener.onAppRegistered(false)
+                }
+            }
         }
 
         override fun onConnectionStateChanged(device: BluetoothDevice?, state: Int) {
@@ -126,12 +170,40 @@ class BluetoothHidManager(
         return true
     }
 
-    var isTurboMode = false
-
     @SuppressLint("MissingPermission")
     fun registerHidApp() {
+        val proxy = hidDevice
+        if (proxy == null) {
+            Log.w(tag, "registerHidApp called before proxy ready; initializing proxy...")
+            initialize()
+            return
+        }
+
+        if (isRegistered || regState == RegState.REGISTERED) {
+            Log.d(tag, "HID App already registered.")
+            return
+        }
+
+        if (regState == RegState.REGISTERING || regState == RegState.UNREGISTERING_FOR_RETRY) {
+            Log.d(tag, "Registration already in progress ($regState)")
+            return
+        }
+
+        retryCount = 0
+        executeRegistration(attemptDefaultQos = false)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun executeRegistration(attemptDefaultQos: Boolean) {
         val proxy = hidDevice ?: return
-        if (isRegistered) return
+        regState = RegState.REGISTERING
+
+        val statusMsg = if (retryCount > 0) {
+            "Registering HID (Retry $retryCount/$maxRetries)..."
+        } else {
+            "Registering HID..."
+        }
+        listener.onRegistrationStatusChanged(statusMsg)
 
         val sdpSettings = BluetoothHidDeviceAppSdpSettings(
             "Tab S6 Lite Digitizer",
@@ -141,34 +213,133 @@ class BluetoothHidManager(
             HidDescriptor.REPORT_DESCRIPTOR
         )
 
-        // Turbo mode requests 7.5ms (7500us) latency for ~133Hz polling vs 11.25ms (11250us)
-        val latencyUs = if (isTurboMode) 7500 else 11250
-        val tokenRate = if (isTurboMode) 1600 else 800
-
-        val inQos = BluetoothHidDeviceAppQosSettings(
-            BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT,
-            tokenRate,
-            18,
-            0,
-            latencyUs,
-            BluetoothHidDeviceAppQosSettings.MAX
-        )
-
-        val outQos = BluetoothHidDeviceAppQosSettings(
-            BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT,
-            tokenRate,
-            18,
-            0,
-            latencyUs,
-            BluetoothHidDeviceAppQosSettings.MAX
-        )
+        // For retries >= 2 or when requested, pass null QoS (system default)
+        // because certain Bluetooth controller firmwares reject custom token rates or latency settings
+        val (inQos, outQos) = if (attemptDefaultQos || retryCount >= 2) {
+            Log.d(tag, "Applying default (null) QoS settings for controller compatibility")
+            Pair(null, null)
+        } else {
+            val latencyUs = if (isTurboMode) 7500 else 11250
+            val tokenRate = if (isTurboMode) 1600 else 800
+            val inQ = BluetoothHidDeviceAppQosSettings(
+                BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT,
+                tokenRate,
+                18,
+                0,
+                latencyUs,
+                BluetoothHidDeviceAppQosSettings.MAX
+            )
+            val outQ = BluetoothHidDeviceAppQosSettings(
+                BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT,
+                tokenRate,
+                18,
+                0,
+                latencyUs,
+                BluetoothHidDeviceAppQosSettings.MAX
+            )
+            Pair(inQ, outQ)
+        }
 
         try {
-            proxy.registerApp(sdpSettings, inQos, outQos, executor, hidCallback)
-            Log.d(tag, "Requested HID App registration (Turbo=$isTurboMode, latency=${latencyUs}us)")
+            val enqueued = proxy.registerApp(sdpSettings, inQos, outQos, executor, hidCallback)
+            Log.d(tag, "proxy.registerApp returned: $enqueued (attempt=$retryCount, turbo=$isTurboMode)")
+            if (!enqueued) {
+                // Common Android issue: A previous instance of the app left Bluetooth stack in 'isAppRegistered=true'.
+                // Must unregister first to clear the stale binder registration before trying again.
+                Log.w(tag, "registerApp was rejected immediately. Clearing stale registration and retrying...")
+                handleRegistrationFailure()
+            }
         } catch (e: Exception) {
             Log.e(tag, "Failed to register HID app", e)
-            listener.onError("Failed to register HID app: ${e.message}")
+            handleRegistrationFailure()
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun handleRegistrationFailure() {
+        val proxy = hidDevice
+
+        if (retryCount < maxRetries && proxy != null) {
+            retryCount++
+            Log.w(tag, "Initiating self-healing reset and retry ($retryCount/$maxRetries)...")
+            listener.onRegistrationStatusChanged("Resetting HID... ($retryCount/$maxRetries)")
+
+            regState = RegState.UNREGISTERING_FOR_RETRY
+            try {
+                // Clear any stale registration from Bluetooth daemon
+                proxy.unregisterApp()
+            } catch (e: Exception) {
+                Log.w(tag, "Error during proxy.unregisterApp()", e)
+            }
+
+            // Fallback timer in case onAppStatusChanged(false) does not fire from unregisterApp
+            mainHandler.removeCallbacks(retryRunnable)
+            mainHandler.postDelayed(retryRunnable, 600)
+        } else {
+            regState = RegState.UNREGISTERED
+            isRegistered = false
+            Log.e(tag, "All HID registration attempts exhausted.")
+            listener.onAppRegistered(false)
+        }
+    }
+
+    private val retryRunnable = Runnable {
+        if (regState == RegState.UNREGISTERING_FOR_RETRY) {
+            Log.d(tag, "Retry timeout elapsed. Re-attempting registration...")
+            regState = RegState.UNREGISTERED
+            executeRegistration(attemptDefaultQos = retryCount >= 2)
+        }
+    }
+
+    /**
+     * Manually resets and retries HID registration.
+     * Can be invoked by the user tapping the status badge or connect button.
+     */
+    @SuppressLint("MissingPermission")
+    fun retryRegistration() {
+        Log.d(tag, "Manual retryRegistration called")
+        mainHandler.removeCallbacks(retryRunnable)
+        retryCount = 0
+        regState = RegState.UNREGISTERED
+
+        if (bluetoothAdapter == null || !bluetoothAdapter!!.isEnabled) {
+            listener.onError("Please enable Bluetooth first.")
+            listener.onAppRegistered(false)
+            return
+        }
+
+        val proxy = hidDevice
+        if (proxy == null) {
+            listener.onRegistrationStatusChanged("Reconnecting Bluetooth profile...")
+            initialize()
+        } else {
+            listener.onRegistrationStatusChanged("Resetting HID service...")
+            regState = RegState.UNREGISTERING_FOR_RETRY
+            try {
+                proxy.unregisterApp()
+            } catch (_: Exception) {}
+
+            mainHandler.postDelayed({
+                regState = RegState.UNREGISTERED
+                executeRegistration(attemptDefaultQos = false)
+            }, 350)
+        }
+    }
+
+    /**
+     * Toggles Turbo Mode (low-latency QoS).
+     * If already registered and idle (disconnected), safely re-registers with new QoS.
+     */
+    @SuppressLint("MissingPermission")
+    fun setTurboMode(enabled: Boolean, onNeedsReconnect: (() -> Unit)? = null) {
+        if (isTurboMode == enabled) return
+        isTurboMode = enabled
+
+        if (isRegistered && connectedDevice == null) {
+            Log.d(tag, "Re-registering HID to apply new Turbo mode QoS ($enabled)")
+            retryRegistration()
+        } else if (connectedDevice != null) {
+            onNeedsReconnect?.invoke()
         }
     }
 
@@ -236,11 +407,15 @@ class BluetoothHidManager(
 
     @SuppressLint("MissingPermission")
     fun destroy() {
+        mainHandler.removeCallbacks(retryRunnable)
         try {
             if (isRegistered) {
                 hidDevice?.unregisterApp()
+                isRegistered = false
+                regState = RegState.UNREGISTERED
             }
             bluetoothAdapter?.closeProfileProxy(BluetoothProfile.HID_DEVICE, hidDevice)
+            hidDevice = null
         } catch (e: Exception) {
             Log.e(tag, "Error closing proxy", e)
         }
