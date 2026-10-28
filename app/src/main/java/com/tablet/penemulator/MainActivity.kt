@@ -58,7 +58,19 @@ class MainActivity : AppCompatActivity() {
             when (intent?.action) {
                 BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
                     val state = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR)
-                    if (state == BluetoothDevice.BOND_BONDED || state == BluetoothDevice.BOND_NONE) {
+                    val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                    }
+                    if (state == BluetoothDevice.BOND_BONDED) {
+                        runOnUiThread {
+                            refreshPairedDevices()
+                            Toast.makeText(this@MainActivity, "Paired with ${device?.name ?: "PC"}! Connecting...", Toast.LENGTH_SHORT).show()
+                            device?.let { startConnection(it) }
+                        }
+                    } else if (state == BluetoothDevice.BOND_NONE) {
                         runOnUiThread {
                             refreshPairedDevices()
                         }
@@ -353,6 +365,18 @@ class MainActivity : AppCompatActivity() {
             override fun onRegistrationStatusChanged(message: String) {
                 runOnUiThread {
                     updateStatus(message, Color.parseColor("#FBBF24"))
+                }
+            }
+
+            override fun onPairingInProgress(device: BluetoothDevice?) {
+                runOnUiThread {
+                    val name = device?.name ?: "PC"
+                    updateStatus("Pairing: Confirm PIN on $name", Color.parseColor("#FBBF24"))
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Pairing request from $name! Please accept the PIN prompt on both devices.",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
 

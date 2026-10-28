@@ -24,6 +24,7 @@ class BluetoothHidManager(
         fun onConnectionStateChanged(device: BluetoothDevice?, state: Int)
         fun onError(message: String)
         fun onRegistrationStatusChanged(message: String) {}
+        fun onPairingInProgress(device: BluetoothDevice?) {}
     }
 
     private enum class RegState {
@@ -110,22 +111,29 @@ class BluetoothHidManager(
 
         override fun onConnectionStateChanged(device: BluetoothDevice?, state: Int) {
             super.onConnectionStateChanged(device, state)
-            Log.d(tag, "onConnectionStateChanged: device=${device?.name}, state=$state")
+            Log.d(tag, "onConnectionStateChanged: device=${device?.name}, state=$state, bondState=${device?.bondState}")
             if (state == BluetoothProfile.STATE_CONNECTED) {
-                connectedDevice = device
+                if (device?.bondState == BluetoothDevice.BOND_BONDED) {
+                    connectedDevice = device
+                    listener.onConnectionStateChanged(device, state)
+                } else {
+                    Log.d(tag, "Connection detected during initial pairing handshake (bondState=${device?.bondState})")
+                    listener.onPairingInProgress(device)
+                }
             } else if (state == BluetoothProfile.STATE_DISCONNECTED) {
                 if (connectedDevice == device) {
                     connectedDevice = null
                 }
+                listener.onConnectionStateChanged(device, state)
+            } else {
+                listener.onConnectionStateChanged(device, state)
             }
-            listener.onConnectionStateChanged(device, state)
         }
 
         override fun onGetReport(device: BluetoothDevice?, type: Byte, id: Byte, bufferSize: Int) {
             super.onGetReport(device, type, id, bufferSize)
-            Log.d(tag, "onGetReport: type=$type, id=$id")
-            if (id == HidDescriptor.REPORT_ID_PEN) {
-                // Send neutral hover-out report
+            Log.d(tag, "onGetReport: type=$type, id=$id, bufferSize=$bufferSize")
+            if (id == HidDescriptor.REPORT_ID_PEN || id == 0.toByte()) {
                 val emptyReport = HidDescriptor.buildReport(
                     tipDown = false,
                     barrelButton = false,
@@ -141,12 +149,19 @@ class BluetoothHidManager(
                 } catch (e: SecurityException) {
                     Log.e(tag, "Permission error on replyReport", e)
                 }
+            } else {
+                try {
+                    hidDevice?.reportError(device, BluetoothHidDevice.ERROR_RSP_INVALID_RPT_ID)
+                } catch (_: Exception) {}
             }
         }
 
         override fun onSetReport(device: BluetoothDevice?, type: Byte, id: Byte, data: ByteArray?) {
             super.onSetReport(device, type, id, data)
             Log.d(tag, "onSetReport: type=$type, id=$id")
+            try {
+                hidDevice?.reportError(device, BluetoothHidDevice.ERROR_RSP_SUCCESS)
+            } catch (_: Exception) {}
         }
     }
 
