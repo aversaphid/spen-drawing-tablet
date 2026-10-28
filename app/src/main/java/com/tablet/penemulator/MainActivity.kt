@@ -125,13 +125,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupUI() {
-        // Status Badge Click -> Retry Registration if in failed / disconnected state
+        // Status Badge Click -> Retry Registration or enter Discoverable Pairing mode
         binding.tvStatus.setOnClickListener {
             if (!bluetoothManager.isRegistered) {
                 Toast.makeText(this, "Retrying HID registration...", Toast.LENGTH_SHORT).show()
                 bluetoothManager.retryRegistration()
             } else if (bluetoothManager.connectedDevice == null && !isConnecting) {
-                Toast.makeText(this, "Status: Ready. Select your PC and tap Connect, or connect from Windows.", Toast.LENGTH_SHORT).show()
+                requestDiscoverability()
             }
         }
 
@@ -197,6 +197,9 @@ class MainActivity : AppCompatActivity() {
             } else if (isConnecting) {
                 // Currently in connection attempt -> Cancel
                 cancelConnectionAttempt()
+            } else if (pairedDevicesList.isEmpty()) {
+                // No paired devices -> Trigger discoverability to pair
+                requestDiscoverability()
             } else {
                 // Not connected -> Start connection to selected device
                 val selectedIndex = binding.spinnerDevices.selectedItemPosition
@@ -204,7 +207,7 @@ class MainActivity : AppCompatActivity() {
                     val targetDevice = pairedDevicesList[selectedIndex]
                     startConnection(targetDevice)
                 } else {
-                    Toast.makeText(this, "Please pair your PC in Bluetooth settings first.", Toast.LENGTH_SHORT).show()
+                    requestDiscoverability()
                 }
             }
         }
@@ -221,6 +224,25 @@ class MainActivity : AppCompatActivity() {
                 tiltX = tiltX,
                 tiltY = tiltY
             )
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun requestDiscoverability() {
+        val adapter = BluetoothAdapter.getDefaultAdapter()
+        val deviceName = adapter?.name ?: "Galaxy Tab"
+        try {
+            val discoverableIntent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
+                putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
+            }
+            startActivity(discoverableIntent)
+            Toast.makeText(
+                this,
+                "Tablet is now discoverable! On your PC, look for: '$deviceName'",
+                Toast.LENGTH_LONG
+            ).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Open Android Settings > Bluetooth to make discoverable.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -315,7 +337,7 @@ class MainActivity : AppCompatActivity() {
             override fun onAppRegistered(registered: Boolean) {
                 runOnUiThread {
                     if (registered) {
-                        updateStatus("Ready to Pair / Connect", Color.parseColor("#34D399"))
+                        updateStatus("Ready (Tap to Pair)", Color.parseColor("#34D399"))
                         refreshPairedDevices()
                     } else {
                         updateStatus("HID Reg Failed • Tap to Retry", Color.parseColor("#F87171"))
@@ -433,10 +455,11 @@ class MainActivity : AppCompatActivity() {
 
         if (pairedDevicesList.isNotEmpty()) {
             binding.spinnerDevices.setSelection(0)
-        }
-
-        if (names.isEmpty()) {
-            Toast.makeText(this, "No paired devices found. Pair your PC in Android Bluetooth Settings.", Toast.LENGTH_LONG).show()
+            if (bluetoothManager.connectedDevice == null && !isConnecting) {
+                binding.btnConnect.text = getString(R.string.connect)
+            }
+        } else {
+            binding.btnConnect.text = "Pair PC"
         }
     }
 
