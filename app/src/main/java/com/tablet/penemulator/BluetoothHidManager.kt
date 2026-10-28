@@ -344,14 +344,30 @@ class BluetoothHidManager(
     }
 
     @SuppressLint("MissingPermission")
-    fun connect(device: BluetoothDevice) {
-        val proxy = hidDevice ?: return
-        try {
-            proxy.connect(device)
-            Log.d(tag, "Connecting to ${device.name ?: device.address}")
+    fun connect(device: BluetoothDevice): Boolean {
+        val proxy = hidDevice
+        if (proxy == null) {
+            Log.w(tag, "connect(): hidDevice proxy is null")
+            listener.onError("Bluetooth HID profile not ready.")
+            return false
+        }
+        if (!isRegistered) {
+            Log.w(tag, "connect(): not registered")
+            listener.onError("HID service not registered. Retrying...")
+            retryRegistration()
+            return false
+        }
+        return try {
+            val queued = proxy.connect(device)
+            Log.d(tag, "Connecting to ${device.name ?: device.address} -> proxy.connect returned: $queued")
+            if (!queued) {
+                listener.onError("Android rejected connection to ${device.name ?: device.address}. Is device paired?")
+            }
+            queued
         } catch (e: Exception) {
             Log.e(tag, "Failed to connect to device", e)
             listener.onError("Failed to connect: ${e.message}")
+            false
         }
     }
 
