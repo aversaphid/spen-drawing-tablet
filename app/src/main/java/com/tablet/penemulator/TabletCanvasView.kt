@@ -195,7 +195,7 @@ class TabletCanvasView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_UP,
             MotionEvent.ACTION_CANCEL -> {
-                processMotionEvent(event, tipDown = false, inRange = true)
+                processMotionEvent(event, tipDown = false, inRange = false)
                 return true
             }
         }
@@ -295,7 +295,7 @@ class TabletCanvasView @JvmOverloads constructor(
             canvas.drawLine(activeAreaRect.left, activeAreaRect.top, activeAreaRect.left, activeAreaRect.top + cornerLen, stealthCornerPaint)
             // Top-right
             canvas.drawLine(activeAreaRect.right, activeAreaRect.top, activeAreaRect.right - cornerLen, activeAreaRect.top, stealthCornerPaint)
-            canvas.drawLine(activeAreaRect.right, activeAreaRect.top, activeAreaRect.right, activeAreaRect.top - cornerLen, stealthCornerPaint)
+            canvas.drawLine(activeAreaRect.right, activeAreaRect.top, activeAreaRect.right, activeAreaRect.top + cornerLen, stealthCornerPaint)
             // Bottom-left
             canvas.drawLine(activeAreaRect.left, activeAreaRect.bottom, activeAreaRect.left + cornerLen, activeAreaRect.bottom, stealthCornerPaint)
             canvas.drawLine(activeAreaRect.left, activeAreaRect.bottom, activeAreaRect.left, activeAreaRect.bottom - cornerLen, stealthCornerPaint)
@@ -361,8 +361,9 @@ class TabletCanvasView @JvmOverloads constructor(
         val statusColor = if (isTipDown) Color.parseColor("#38BDF8") else if (isInRange) Color.parseColor("#34D399") else Color.parseColor("#64748B")
         drawItem("STATE: ", statusText, statusColor)
 
-        val pktColor = if (reportsDeliveredCount > 0) Color.parseColor("#34D399") else Color.parseColor("#94A3B8")
-        drawItem("PKTS: ", "$reportsDeliveredCount", pktColor)
+        val pktColor = if (reportsDeliveredCount > 0) Color.parseColor("#34D399") else Color.parseColor("#F87171")
+        val pktText = if (reportsDeliveredCount > 0) "$reportsDeliveredCount" else "$reportsDeliveredCount/$reportsSentCount"
+        drawItem("PKTS: ", pktText, pktColor)
 
         val posStr = "${(currentNormX * 100).roundToInt()}%, ${(currentNormY * 100).roundToInt()}%"
         drawItem("POS: ", posStr, Color.parseColor("#F3F4F6"))

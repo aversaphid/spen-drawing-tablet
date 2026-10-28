@@ -14,8 +14,7 @@ import android.util.Log
 import java.util.concurrent.Executors
 
 class BluetoothHidManager(
-    private val context: Context,
-    private val listener: Callback
+    private val context: Context
 ) {
 
     interface Callback {
@@ -37,6 +36,8 @@ class BluetoothHidManager(
     private val tag = "BluetoothHidManager"
     private val executor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    var callback: Callback? = null
 
     private var bluetoothAdapter: BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
     var hidDevice: BluetoothHidDevice? = null
@@ -64,7 +65,7 @@ class BluetoothHidManager(
                 Log.d(tag, "BluetoothHidDevice service connected")
                 hidDevice = proxy as BluetoothHidDevice
                 mainHandler.post {
-                    listener.onServiceConnected()
+                    callback?.onServiceConnected()
                 }
                 registerHidApp()
             }
@@ -78,7 +79,7 @@ class BluetoothHidManager(
                 isRegistered = false
                 regState = RegState.UNREGISTERED
                 mainHandler.post {
-                    listener.onAppRegistered(false)
+                    callback?.onAppRegistered(false)
                 }
             }
         }
@@ -95,7 +96,7 @@ class BluetoothHidManager(
                 retryCount = 0
                 mainHandler.removeCallbacks(retryRunnable)
                 mainHandler.post {
-                    listener.onAppRegistered(true)
+                    callback?.onAppRegistered(true)
                 }
                 checkActiveConnection()
             } else {
@@ -115,7 +116,7 @@ class BluetoothHidManager(
                 } else {
                     regState = RegState.UNREGISTERED
                     mainHandler.post {
-                        listener.onAppRegistered(false)
+                        callback?.onAppRegistered(false)
                     }
                 }
             }
@@ -130,13 +131,13 @@ class BluetoothHidManager(
                         connectedDevice = device
                         pendingBondedDevice = null
                         mainHandler.post {
-                            listener.onConnectionStateChanged(device, state)
+                            callback?.onConnectionStateChanged(device, state)
                         }
                     } else {
                         Log.d(tag, "Connection detected during initial pairing handshake (bondState=${device.bondState}). Holding pending connection...")
                         pendingBondedDevice = device
                         mainHandler.post {
-                            listener.onPairingInProgress(device)
+                            callback?.onPairingInProgress(device)
                         }
                     }
                 }
@@ -148,11 +149,11 @@ class BluetoothHidManager(
                     pendingBondedDevice = null
                 }
                 mainHandler.post {
-                    listener.onConnectionStateChanged(device, state)
+                    callback?.onConnectionStateChanged(device, state)
                 }
             } else {
                 mainHandler.post {
-                    listener.onConnectionStateChanged(device, state)
+                    callback?.onConnectionStateChanged(device, state)
                 }
             }
         }
@@ -193,18 +194,24 @@ class BluetoothHidManager(
     @SuppressLint("MissingPermission")
     fun initialize(): Boolean {
         if (bluetoothAdapter == null) {
-            listener.onError("Bluetooth is not supported on this device.")
+            mainHandler.post {
+                callback?.onError("Bluetooth is not supported on this device.")
+            }
             return false
         }
 
         if (!bluetoothAdapter!!.isEnabled) {
-            listener.onError("Bluetooth is disabled. Please enable Bluetooth.")
+            mainHandler.post {
+                callback?.onError("Bluetooth is disabled. Please enable Bluetooth.")
+            }
             return false
         }
 
         val success = bluetoothAdapter!!.getProfileProxy(context, serviceListener, BluetoothProfile.HID_DEVICE)
         if (!success) {
-            listener.onError("Could not get Bluetooth HID Device profile proxy.")
+            mainHandler.post {
+                callback?.onError("Could not get Bluetooth HID Device profile proxy.")
+            }
             return false
         }
         return true
@@ -244,7 +251,7 @@ class BluetoothHidManager(
             "Registering HID..."
         }
         mainHandler.post {
-            listener.onRegistrationStatusChanged(statusMsg)
+            callback?.onRegistrationStatusChanged(statusMsg)
         }
 
         // Subclass: SUBCLASS2_DIGITIZER_TABLET declares an external precision graphics tablet
@@ -286,8 +293,6 @@ class BluetoothHidManager(
             val enqueued = proxy.registerApp(sdpSettings, inQos, outQos, executor, hidCallback)
             Log.d(tag, "proxy.registerApp returned: $enqueued (attempt=$retryCount, turbo=$isTurboMode)")
             if (!enqueued) {
-                // Common Android issue: A previous instance of the app left Bluetooth stack in 'isAppRegistered=true'.
-                // Must unregister first to clear the stale binder registration before trying again.
                 Log.w(tag, "registerApp was rejected immediately. Clearing stale registration and retrying...")
                 handleRegistrationFailure()
             }
@@ -305,7 +310,7 @@ class BluetoothHidManager(
             retryCount++
             Log.w(tag, "Initiating self-healing reset and retry ($retryCount/$maxRetries)...")
             mainHandler.post {
-                listener.onRegistrationStatusChanged("Resetting HID... ($retryCount/$maxRetries)")
+                callback?.onRegistrationStatusChanged("Resetting HID... ($retryCount/$maxRetries)")
             }
 
             regState = RegState.UNREGISTERING_FOR_RETRY
@@ -324,7 +329,7 @@ class BluetoothHidManager(
             isRegistered = false
             Log.e(tag, "All HID registration attempts exhausted.")
             mainHandler.post {
-                listener.onAppRegistered(false)
+                callback?.onAppRegistered(false)
             }
         }
     }
@@ -337,10 +342,6 @@ class BluetoothHidManager(
         }
     }
 
-    /**
-     * Manually resets and retries HID registration.
-     * Can be invoked by the user tapping the status badge or connect button.
-     */
     @SuppressLint("MissingPermission")
     fun retryRegistration() {
         Log.d(tag, "Manual retryRegistration called")
@@ -350,8 +351,8 @@ class BluetoothHidManager(
 
         if (bluetoothAdapter == null || !bluetoothAdapter!!.isEnabled) {
             mainHandler.post {
-                listener.onError("Please enable Bluetooth first.")
-                listener.onAppRegistered(false)
+                callback?.onError("Please enable Bluetooth first.")
+                callback?.onAppRegistered(false)
             }
             return
         }
@@ -359,12 +360,12 @@ class BluetoothHidManager(
         val proxy = hidDevice
         if (proxy == null) {
             mainHandler.post {
-                listener.onRegistrationStatusChanged("Reconnecting Bluetooth profile...")
+                callback?.onRegistrationStatusChanged("Reconnecting Bluetooth profile...")
             }
             initialize()
         } else {
             mainHandler.post {
-                listener.onRegistrationStatusChanged("Resetting HID service...")
+                callback?.onRegistrationStatusChanged("Resetting HID service...")
             }
             regState = RegState.UNREGISTERING_FOR_RETRY
             try {
@@ -378,10 +379,6 @@ class BluetoothHidManager(
         }
     }
 
-    /**
-     * Toggles Turbo Mode (low-latency QoS).
-     * If already registered and idle (disconnected), safely re-registers with new QoS.
-     */
     @SuppressLint("MissingPermission")
     fun setTurboMode(enabled: Boolean, onNeedsReconnect: (() -> Unit)? = null) {
         if (isTurboMode == enabled) return
@@ -395,12 +392,8 @@ class BluetoothHidManager(
         }
     }
 
-    /**
-     * Checks if a device has an active profile connection with BluetoothHidDevice.
-     */
     @SuppressLint("MissingPermission")
     fun isDeviceConnected(device: BluetoothDevice): Boolean {
-        if (connectedDevice?.address == device.address) return true
         val proxy = hidDevice ?: return false
         return try {
             proxy.getConnectionState(device) == BluetoothProfile.STATE_CONNECTED
@@ -409,28 +402,22 @@ class BluetoothHidManager(
         }
     }
 
-    /**
-     * Handles device bonding completion. If the device was already connected
-     * during the pairing handshake or by the host, promotes it immediately
-     * to the active session without disruptive reconnect attempts.
-     */
     @SuppressLint("MissingPermission")
     fun onDeviceBonded(device: BluetoothDevice) {
         Log.d(tag, "onDeviceBonded: device=${device.name ?: device.address}")
-        val isAlreadyConnected = (pendingBondedDevice?.address == device.address) ||
-                (connectedDevice?.address == device.address) ||
-                isDeviceConnected(device) ||
+        val actuallyConnected = isDeviceConnected(device) ||
                 (hidDevice?.connectedDevices?.any { it.address == device.address } == true)
 
-        if (isAlreadyConnected) {
-            Log.i(tag, "Device ${device.name ?: device.address} is already connected via HID. Activating session!")
+        if (actuallyConnected) {
+            Log.i(tag, "Device ${device.name ?: device.address} is verified connected via HID. Activating session!")
             pendingBondedDevice = null
             connectedDevice = device
             mainHandler.post {
-                listener.onConnectionStateChanged(device, BluetoothProfile.STATE_CONNECTED)
+                callback?.onConnectionStateChanged(device, BluetoothProfile.STATE_CONNECTED)
             }
         } else {
-            Log.d(tag, "Device bonded but not yet connected. Attempting connection...")
+            Log.i(tag, "Device bonded. Initiating active HID connection to ${device.name ?: device.address}...")
+            pendingBondedDevice = null
             connect(device)
         }
     }
@@ -441,39 +428,41 @@ class BluetoothHidManager(
         if (proxy == null) {
             Log.w(tag, "connect(): hidDevice proxy is null")
             mainHandler.post {
-                listener.onError("Bluetooth HID profile not ready.")
+                callback?.onError("Bluetooth HID profile not ready.")
             }
             return false
         }
         if (!isRegistered) {
             Log.w(tag, "connect(): not registered")
             mainHandler.post {
-                listener.onError("HID service not registered. Retrying...")
+                callback?.onError("HID service not registered. Retrying...")
             }
             retryRegistration()
             return false
         }
-        if (connectedDevice?.address == device.address || isDeviceConnected(device)) {
+        if (isDeviceConnected(device)) {
             Log.d(tag, "Device ${device.address} is already connected!")
             connectedDevice = device
             mainHandler.post {
-                listener.onConnectionStateChanged(device, BluetoothProfile.STATE_CONNECTED)
+                callback?.onConnectionStateChanged(device, BluetoothProfile.STATE_CONNECTED)
             }
             return true
         }
+
+        connectedDevice = null
         return try {
             val queued = proxy.connect(device)
             Log.d(tag, "Connecting to ${device.name ?: device.address} -> proxy.connect returned: $queued")
             if (!queued) {
                 mainHandler.post {
-                    listener.onError("Android rejected connection to ${device.name ?: device.address}. Is device paired?")
+                    callback?.onError("Android rejected connection to ${device.name ?: device.address}. Is device paired?")
                 }
             }
             queued
         } catch (e: Exception) {
             Log.e(tag, "Failed to connect to device", e)
             mainHandler.post {
-                listener.onError("Failed to connect: ${e.message}")
+                callback?.onError("Failed to connect: ${e.message}")
             }
             false
         }
@@ -498,13 +487,10 @@ class BluetoothHidManager(
         pendingBondedDevice = null
 
         mainHandler.post {
-            listener.onConnectionStateChanged(deviceToDisconnect, BluetoothProfile.STATE_DISCONNECTED)
+            callback?.onConnectionStateChanged(deviceToDisconnect, BluetoothProfile.STATE_DISCONNECTED)
         }
     }
 
-    /**
-     * Inspects proxy for existing established connections (e.g. initiated by PC or retained across app resumes)
-     */
     @SuppressLint("MissingPermission")
     fun checkActiveConnection() {
         val proxy = hidDevice ?: return
@@ -514,7 +500,7 @@ class BluetoothHidManager(
                 Log.d(tag, "Found active connected device: ${active.name ?: active.address}")
                 connectedDevice = active
                 mainHandler.post {
-                    listener.onConnectionStateChanged(active, BluetoothProfile.STATE_CONNECTED)
+                    callback?.onConnectionStateChanged(active, BluetoothProfile.STATE_CONNECTED)
                 }
             }
         } else if (connectedDevice != null) {
@@ -522,7 +508,7 @@ class BluetoothHidManager(
             val lost = connectedDevice
             connectedDevice = null
             mainHandler.post {
-                listener.onConnectionStateChanged(lost, BluetoothProfile.STATE_DISCONNECTED)
+                callback?.onConnectionStateChanged(lost, BluetoothProfile.STATE_DISCONNECTED)
             }
         }
     }
@@ -538,7 +524,6 @@ class BluetoothHidManager(
     ): Boolean {
         val proxy = hidDevice ?: return false
         val device = connectedDevice ?: run {
-            // Self-healing fallback: if an active connection exists in proxy, recover it
             val active = proxy.connectedDevices?.firstOrNull()
             if (active != null) {
                 connectedDevice = active
@@ -546,6 +531,10 @@ class BluetoothHidManager(
             } else {
                 return false
             }
+        }
+
+        if (proxy.getConnectionState(device) != BluetoothProfile.STATE_CONNECTED) {
+            return false
         }
 
         val reportData = HidDescriptor.buildReport(
@@ -568,19 +557,5 @@ class BluetoothHidManager(
     @SuppressLint("MissingPermission")
     fun getPairedDevices(): List<BluetoothDevice> {
         return bluetoothAdapter?.bondedDevices?.toList() ?: emptyList()
-    }
-
-    @SuppressLint("MissingPermission")
-    fun destroy() {
-        mainHandler.removeCallbacks(retryRunnable)
-        // Intentionally do NOT call proxy.unregisterApp() here.
-        // Preserving the registration in the Bluetooth daemon allows the tablet to
-        // remain paired and reconnect seamlessly without corrupting Fluoride's async state machine.
-        try {
-            bluetoothAdapter?.closeProfileProxy(BluetoothProfile.HID_DEVICE, hidDevice)
-            hidDevice = null
-        } catch (e: Exception) {
-            Log.e(tag, "Error closing proxy", e)
-        }
     }
 }
