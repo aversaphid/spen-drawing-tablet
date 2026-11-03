@@ -2,20 +2,12 @@ package com.tablet.penemulator
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothClass
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothProfile
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.view.View
 import android.view.WindowManager
 import android.widget.ArrayAdapter
@@ -23,6 +15,9 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.tablet.penemulator.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
@@ -33,162 +28,9 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val PREFS_NAME = "pen_emulator_prefs"
         private const val KEY_LAST_DEVICE_ADDRESS = "last_connected_device_address"
-        private const val CONNECTION_TIMEOUT_MS = 12000L
     }
 
     private var pairedDevicesList = mutableListOf<BluetoothDevice>()
-    private var isConnecting = false
-    private val connectionHandler = Handler(Looper.getMainLooper())
-    private val connectionTimeoutRunnable = Runnable {
-        if (isConnecting) {
-            isConnecting = false
-            binding.btnConnect.text = getString(R.string.connect)
-            updateStatus("Timed Out • Connect from PC", Color.parseColor("#F87171"))
-            Toast.makeText(
-                this,
-                "PC did not respond in time. Tip: You can also click 'Connect' from Windows Bluetooth settings.",
-                Toast.LENGTH_LONG
-            ).show()
-        }
-    }
-
-    private val hidCallback = object : BluetoothHidManager.Callback {
-        override fun onServiceConnected() {
-            runOnUiThread {
-                updateStatus("HID Profile Ready", Color.parseColor("#38BDF8"))
-            }
-        }
-
-        override fun onAppRegistered(registered: Boolean) {
-            runOnUiThread {
-                if (registered) {
-                    updateStatus("Ready (Tap to Pair)", Color.parseColor("#34D399"))
-                    refreshPairedDevices()
-                } else {
-                    updateStatus("HID Reg Failed • Tap to Retry", Color.parseColor("#F87171"))
-                    Toast.makeText(
-                        this@MainActivity,
-                        "HID registration failed. Tap status badge to retry, or toggle Bluetooth.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            }
-        }
-
-        override fun onRegistrationStatusChanged(message: String) {
-            runOnUiThread {
-                updateStatus(message, Color.parseColor("#FBBF24"))
-            }
-        }
-
-        override fun onPairingInProgress(device: BluetoothDevice?) {
-            runOnUiThread {
-                val name = device?.name ?: "PC"
-                updateStatus("Pairing: Confirm PIN on $name", Color.parseColor("#FBBF24"))
-                Toast.makeText(
-                    this@MainActivity,
-                    "Pairing request from $name! Please accept the PIN prompt on both devices.",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        }
-
-        @SuppressLint("MissingPermission")
-        override fun onConnectionStateChanged(device: BluetoothDevice?, state: Int) {
-            runOnUiThread {
-                connectionHandler.removeCallbacks(connectionTimeoutRunnable)
-                when (state) {
-                    BluetoothProfile.STATE_CONNECTED -> {
-                        isConnecting = false
-                        val deviceName = device?.name ?: device?.address ?: "Host"
-                        updateStatus("Connected: $deviceName", Color.parseColor("#34D399"))
-                        binding.btnConnect.text = getString(R.string.disconnect)
-                        Toast.makeText(this@MainActivity, "Connected to $deviceName! Ready to draw.", Toast.LENGTH_SHORT).show()
-
-                        // Save as last connected device
-                        device?.address?.let { addr ->
-                            getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                                .edit()
-                                .putString(KEY_LAST_DEVICE_ADDRESS, addr)
-                                .apply()
-                        }
-                        refreshPairedDevices()
-                    }
-                    BluetoothProfile.STATE_CONNECTING -> {
-                        isConnecting = true
-                        val deviceName = device?.name ?: device?.address ?: "Host"
-                        updateStatus("Connecting to $deviceName...", Color.parseColor("#FBBF24"))
-                        binding.btnConnect.text = "Cancel"
-                    }
-                    BluetoothProfile.STATE_DISCONNECTING -> {
-                        updateStatus("Disconnecting...", Color.parseColor("#FBBF24"))
-                    }
-                    BluetoothProfile.STATE_DISCONNECTED -> {
-                        val wasConnecting = isConnecting
-                        isConnecting = false
-                        binding.btnConnect.text = getString(R.string.connect)
-                        if (wasConnecting) {
-                            updateStatus("Refused by PC • Connect from PC", Color.parseColor("#F87171"))
-                            Toast.makeText(
-                                this@MainActivity,
-                                "Host dropped or refused connection. Tip: In Windows Bluetooth settings, click 'Connect' on this tablet.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        } else {
-                            updateStatus("Ready (Tap to Pair/Connect)", Color.parseColor("#34D399"))
-                        }
-                        refreshPairedDevices()
-                    }
-                }
-            }
-        }
-
-        override fun onError(message: String) {
-            runOnUiThread {
-                Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-
-    // Dynamic listener for real-time pairing events
-    private val bluetoothReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
-                    val state = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR)
-                    val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
-                    } else {
-                        @Suppress("DEPRECATION")
-                        intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
-                    }
-                    if (state == BluetoothDevice.BOND_BONDED) {
-                        runOnUiThread {
-                            refreshPairedDevices()
-                            if (device != null && ::bluetoothManager.isInitialized) {
-                                bluetoothManager.onDeviceBonded(device)
-                            }
-                        }
-                    } else if (state == BluetoothDevice.BOND_NONE) {
-                        runOnUiThread {
-                            refreshPairedDevices()
-                        }
-                    }
-                }
-                BluetoothAdapter.ACTION_STATE_CHANGED -> {
-                    val state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)
-                    if (state == BluetoothAdapter.STATE_ON) {
-                        runOnUiThread {
-                            if (::bluetoothManager.isInitialized) {
-                                bluetoothManager.initialize()
-                            }
-                            refreshPairedDevices()
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -208,59 +50,22 @@ class MainActivity : AppCompatActivity() {
         // Keep screen awake while tablet app is running
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
+        // Enable edge-to-edge full screen drawing (hides taskbar & navigation bars)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        bluetoothManager = (application as PenTabletApplication).bluetoothManager
-
-        val filter = IntentFilter().apply {
-            addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
-            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
-        }
-        registerReceiver(bluetoothReceiver, filter)
-
+        hideSystemBars()
         setupUI()
         checkPermissionsAndInit()
     }
 
-    @SuppressLint("MissingPermission")
-    override fun onResume() {
-        super.onResume()
-        if (::bluetoothManager.isInitialized) {
-            bluetoothManager.callback = hidCallback
-            refreshPairedDevices()
-            val adapter = BluetoothAdapter.getDefaultAdapter()
-            if (adapter != null && adapter.isEnabled) {
-                if (bluetoothManager.isRegistered) {
-                    bluetoothManager.checkActiveConnection()
-                    val dev = bluetoothManager.connectedDevice
-                    if (dev != null && bluetoothManager.isDeviceConnected(dev)) {
-                        updateStatus("Connected: ${dev.name ?: dev.address}", Color.parseColor("#34D399"))
-                        binding.btnConnect.text = getString(R.string.disconnect)
-                    } else {
-                        updateStatus("Ready (Tap to Pair/Connect)", Color.parseColor("#34D399"))
-                        binding.btnConnect.text = getString(R.string.connect)
-                    }
-                } else if (bluetoothManager.hidDevice == null) {
-                    bluetoothManager.initialize()
-                } else {
-                    bluetoothManager.registerHidApp()
-                }
-            }
-        }
-    }
-
     private fun setupUI() {
-        // Status Badge Click -> Retry Registration or enter Discoverable Pairing mode
-        binding.tvStatus.setOnClickListener {
-            if (!bluetoothManager.isRegistered) {
-                Toast.makeText(this, "Retrying HID registration...", Toast.LENGTH_SHORT).show()
-                bluetoothManager.retryRegistration()
-            } else if (bluetoothManager.connectedDevice == null && !isConnecting) {
-                requestDiscoverability()
-            }
-        }
-
         // 1. Aspect Ratio Selection
         binding.toggleAspectRatio.addOnButtonCheckedListener { _, checkedId, isChecked ->
             if (isChecked) {
@@ -273,11 +78,7 @@ class MainActivity : AppCompatActivity() {
 
         // 2. Turbo Bluetooth Polling Toggle
         binding.btnTurbo.setOnClickListener {
-            val targetTurbo = !bluetoothManager.isTurboMode
-            bluetoothManager.setTurboMode(targetTurbo) {
-                Toast.makeText(this, "Turbo mode QoS will apply upon reconnecting.", Toast.LENGTH_SHORT).show()
-            }
-
+            bluetoothManager.isTurboMode = !bluetoothManager.isTurboMode
             if (bluetoothManager.isTurboMode) {
                 binding.btnTurbo.text = "Turbo ⚡ [ON]"
                 binding.btnTurbo.setTextColor(Color.parseColor("#38BDF8"))
@@ -309,105 +110,34 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 5. Connect / Disconnect / Cancel Button
+        // 5. Connect / Disconnect Button
         binding.btnConnect.setOnClickListener {
-            if (!bluetoothManager.isRegistered) {
-                Toast.makeText(this, "HID not registered. Resetting and retrying...", Toast.LENGTH_SHORT).show()
-                bluetoothManager.retryRegistration()
-                return@setOnClickListener
-            }
-
-            if (bluetoothManager.connectedDevice != null ||
-                (bluetoothManager.hidDevice?.connectedDevices?.isNotEmpty() == true)) {
-                // Currently connected -> Disconnect immediately
+            if (bluetoothManager.connectedDevice != null) {
                 bluetoothManager.disconnect()
-            } else if (isConnecting) {
-                // Currently in connection attempt -> Cancel
-                cancelConnectionAttempt()
-            } else if (pairedDevicesList.isEmpty()) {
-                // No paired devices -> Trigger discoverability to pair
-                requestDiscoverability()
             } else {
-                // Not connected -> Start connection to selected device
                 val selectedIndex = binding.spinnerDevices.selectedItemPosition
                 if (selectedIndex in pairedDevicesList.indices) {
                     val targetDevice = pairedDevicesList[selectedIndex]
-                    startConnection(targetDevice)
+                    bluetoothManager.connect(targetDevice)
                 } else {
-                    requestDiscoverability()
+                    Toast.makeText(this, "Please pair your PC in Bluetooth settings first.", Toast.LENGTH_SHORT).show()
                 }
             }
         }
 
-        // Pair PC Button -> Trigger 1-Tap Discoverability
-        binding.btnPair.setOnClickListener {
-            requestDiscoverability()
-        }
-
         // 6. Wire canvas pen events to Bluetooth HID
-        binding.canvasView.onPenEventListener = { tipDown, barrelButton, inRange, x, y, pressure, _, _ ->
+        binding.canvasView.onPenEventListener = { tipDown, barrelButton, inRange, x, y, pressure, tiltX, tiltY ->
             bluetoothManager.sendPenReport(
                 tipDown = tipDown,
                 barrelButton = barrelButton,
                 inRange = inRange,
                 x = x,
                 y = y,
-                pressure = pressure
+                pressure = pressure,
+                tiltX = tiltX,
+                tiltY = tiltY
             )
         }
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun requestDiscoverability() {
-        val adapter = BluetoothAdapter.getDefaultAdapter()
-        val deviceName = adapter?.name ?: "Galaxy Tab"
-        try {
-            val discoverableIntent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
-                putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
-            }
-            startActivity(discoverableIntent)
-            updateStatus("Discoverable: '$deviceName'", Color.parseColor("#38BDF8"))
-            Toast.makeText(
-                this,
-                "Tablet is discoverable! On your PC, open Bluetooth Settings and select: '$deviceName'",
-                Toast.LENGTH_LONG
-            ).show()
-        } catch (e: Exception) {
-            Toast.makeText(this, "Open Android Settings > Bluetooth to make discoverable.", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun startConnection(targetDevice: BluetoothDevice) {
-        val targetName = targetDevice.name ?: targetDevice.address ?: "PC"
-        isConnecting = true
-        binding.btnConnect.text = "Cancel"
-        updateStatus("Connecting to $targetName...", Color.parseColor("#FBBF24"))
-
-        // Set connection watchdog timer
-        connectionHandler.removeCallbacks(connectionTimeoutRunnable)
-        connectionHandler.postDelayed(connectionTimeoutRunnable, CONNECTION_TIMEOUT_MS)
-
-        val enqueued = bluetoothManager.connect(targetDevice)
-        if (!enqueued) {
-            connectionHandler.removeCallbacks(connectionTimeoutRunnable)
-            isConnecting = false
-            binding.btnConnect.text = getString(R.string.connect)
-            updateStatus("Connection Refused • Tap to Retry", Color.parseColor("#F87171"))
-            Toast.makeText(
-                this,
-                "Connection could not start. Ensure PC Bluetooth is on, or click 'Connect' from your PC.",
-                Toast.LENGTH_LONG
-            ).show()
-        }
-    }
-
-    private fun cancelConnectionAttempt() {
-        connectionHandler.removeCallbacks(connectionTimeoutRunnable)
-        isConnecting = false
-        bluetoothManager.disconnect()
-        binding.btnConnect.text = getString(R.string.connect)
-        updateStatus("Connection Cancelled", Color.parseColor("#9CA3AF"))
     }
 
     private fun enableBlackoutMode() {
@@ -432,6 +162,8 @@ class MainActivity : AppCompatActivity() {
         val lp = window.attributes
         lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
         window.attributes = lp
+
+        hideSystemBars()
     }
 
     private fun checkPermissionsAndInit() {
@@ -458,7 +190,62 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initBluetooth() {
-        bluetoothManager.callback = hidCallback
+        bluetoothManager = BluetoothHidManager(this, object : BluetoothHidManager.Callback {
+            override fun onServiceConnected() {
+                runOnUiThread {
+                    updateStatus("HID Profile Ready", Color.parseColor("#38BDF8"))
+                }
+            }
+
+            override fun onAppRegistered(registered: Boolean) {
+                runOnUiThread {
+                    if (registered) {
+                        updateStatus("Ready to Pair / Connect", Color.parseColor("#34D399"))
+                        refreshPairedDevices()
+                    } else {
+                        updateStatus("HID Registration Failed", Color.parseColor("#F87171"))
+                    }
+                }
+            }
+
+            @SuppressLint("MissingPermission")
+            override fun onConnectionStateChanged(device: BluetoothDevice?, state: Int) {
+                runOnUiThread {
+                    when (state) {
+                        BluetoothProfile.STATE_CONNECTED -> {
+                            val deviceName = device?.name ?: device?.address ?: "Host"
+                            updateStatus("Connected: $deviceName", Color.parseColor("#34D399"))
+                            binding.btnConnect.text = getString(R.string.disconnect)
+
+                            // Save as last connected device
+                            device?.address?.let { addr ->
+                                getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                                    .edit()
+                                    .putString(KEY_LAST_DEVICE_ADDRESS, addr)
+                                    .apply()
+                            }
+                        }
+                        BluetoothProfile.STATE_CONNECTING -> {
+                            updateStatus("Connecting...", Color.parseColor("#FBBF24"))
+                        }
+                        BluetoothProfile.STATE_DISCONNECTING -> {
+                            updateStatus("Disconnecting...", Color.parseColor("#FBBF24"))
+                        }
+                        BluetoothProfile.STATE_DISCONNECTED -> {
+                            updateStatus("Disconnected", Color.parseColor("#9CA3AF"))
+                            binding.btnConnect.text = getString(R.string.connect)
+                        }
+                    }
+                }
+            }
+
+            override fun onError(message: String) {
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                }
+            }
+        })
+
         val success = bluetoothManager.initialize()
         if (success) {
             updateStatus("Initializing HID...", Color.parseColor("#FBBF24"))
@@ -471,32 +258,20 @@ class MainActivity : AppCompatActivity() {
         val lastAddress = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
             .getString(KEY_LAST_DEVICE_ADDRESS, null)
 
-        // Smart Sort:
-        // 1. Last connected device at the very top (index 0)
-        // 2. Computers / Laptops
-        // 3. Other devices
-        val sortedList = paired.sortedWith(
-            compareByDescending<BluetoothDevice> {
-                it.address.equals(lastAddress, ignoreCase = true)
-            }.thenByDescending {
-                it.bluetoothClass?.majorDeviceClass == BluetoothClass.Device.Major.COMPUTER
-            }
-        )
+        // Prioritize last connected device as the first initial tried device (index 0)
+        val sortedList = if (!lastAddress.isNullOrEmpty()) {
+            paired.sortedByDescending { it.address.equals(lastAddress, ignoreCase = true) }
+        } else {
+            paired
+        }
 
         pairedDevicesList.clear()
         pairedDevicesList.addAll(sortedList)
 
         val names = pairedDevicesList.map { device ->
-            val icon = when (device.bluetoothClass?.majorDeviceClass) {
-                BluetoothClass.Device.Major.COMPUTER -> "💻"
-                BluetoothClass.Device.Major.PHONE -> "📱"
-                BluetoothClass.Device.Major.AUDIO_VIDEO -> "🎧"
-                BluetoothClass.Device.Major.PERIPHERAL -> "⌨️"
-                else -> "📡"
-            }
             val name = device.name?.takeIf { it.isNotBlank() } ?: device.address ?: "Device"
             val isLast = device.address.equals(lastAddress, ignoreCase = true)
-            if (isLast) "⭐ $icon $name" else "$icon $name"
+            if (isLast) "⭐ $name" else name
         }
 
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, names)
@@ -504,11 +279,10 @@ class MainActivity : AppCompatActivity() {
 
         if (pairedDevicesList.isNotEmpty()) {
             binding.spinnerDevices.setSelection(0)
-            if (bluetoothManager.connectedDevice == null && !isConnecting) {
-                binding.btnConnect.text = getString(R.string.connect)
-            }
-        } else {
-            binding.btnConnect.text = "Pair PC"
+        }
+
+        if (names.isEmpty()) {
+            Toast.makeText(this, "No paired devices found. Pair your PC in Android Bluetooth Settings.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -517,14 +291,24 @@ class MainActivity : AppCompatActivity() {
         binding.tvStatus.setTextColor(color)
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            hideSystemBars()
+        }
+    }
+
+    private fun hideSystemBars() {
+        val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+        insetsController.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        insetsController.hide(WindowInsetsCompat.Type.systemBars())
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        try {
-            unregisterReceiver(bluetoothReceiver)
-        } catch (_: Exception) {}
-        connectionHandler.removeCallbacks(connectionTimeoutRunnable)
         if (::bluetoothManager.isInitialized) {
-            bluetoothManager.callback = null
+            bluetoothManager.destroy()
         }
     }
 }
